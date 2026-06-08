@@ -13,6 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css" />
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root {
     --orange: #D85A30;
@@ -46,6 +47,7 @@
   .header-actions { display: flex; gap: 8px; align-items: center; }
   .hbtn { background: var(--surface); border: 0.5px solid var(--border-strong); border-radius: 8px; padding: 0 10px; height: 32px; cursor: pointer; color: var(--text-muted); font-size: 12px; font-family: 'Inter', sans-serif; display: flex; align-items: center; gap: 5px; transition: background .15s; }
   .hbtn:active { background: var(--border); }
+  .hbtn.orange { color: var(--orange); border-color: var(--orange); }
   .progress-wrap { height: 2px; background: var(--border); border-radius: 1px; margin-bottom: 20px; overflow: hidden; }
   .progress-fill { height: 100%; background: var(--orange); border-radius: 1px; transition: width .4s; }
   .quick-bar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--surface); border-radius: 12px; margin-bottom: 20px; border: 0.5px solid var(--border); }
@@ -63,10 +65,13 @@
   .day-body { padding-bottom: 12px; }
   .task-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 0.5px solid var(--border); }
   .task-row:last-of-type { border-bottom: none; }
-  .check-box { width: 22px; height: 22px; border-radius: 5px; border: 1.5px solid var(--check-border); flex-shrink: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .15s; background: none; -webkit-appearance: none; }
+  .check-box { width: 22px; height: 22px; border-radius: 5px; border: 1.5px solid var(--check-border); flex-shrink: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .15s; background: none; }
   .check-box.checked { background: var(--orange); border-color: var(--orange); }
+  .check-box.cal { border-color: var(--orange); cursor: default; pointer-events: none; }
   .task-label { flex: 1; font-size: 16px; font-weight: 400; color: var(--text); line-height: 1.3; }
   .task-label.done { text-decoration: line-through; color: var(--text-faint); }
+  .task-time { font-size: 11px; color: var(--orange); font-weight: 700; flex-shrink: 0; }
+  .cal-badge { font-size: 10px; font-weight: 700; letter-spacing: .04em; color: var(--orange); flex-shrink: 0; }
   .pri-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
   .p-high { background: #E24B4A; } .p-med { background: #EF9F27; } .p-low { background: #1D9E75; }
   .task-del { background: none; border: none; cursor: pointer; color: var(--text-faint); font-size: 16px; padding: 6px; opacity: 0.4; flex-shrink: 0; }
@@ -74,8 +79,13 @@
   .add-row input { flex: 1; border: none; background: none; font-size: 16px; font-family: 'Inter', sans-serif; color: var(--text); outline: none; padding: 0; }
   .add-row input::placeholder { color: var(--text-faint); }
   .add-row-btn { background: none; border: none; cursor: pointer; color: var(--orange); font-size: 24px; line-height: 1; padding: 0; flex-shrink: 0; }
-  .sync-note { font-size: 11px; color: var(--text-faint); text-align: center; padding: 24px 0 0; }
+  .sync-bar { font-size: 11px; color: var(--text-faint); padding: 0 0 14px; display: flex; align-items: center; gap: 6px; min-height: 24px; }
+  .spin { display: inline-block; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .app-logo { width: 32px; height: 32px; border-radius: 8px; }
+  .footer-note { font-size: 11px; color: var(--text-faint); text-align: center; padding: 24px 0 0; }
+  .cal-row { background: none; }
+  .cal-row .task-label { color: var(--text-muted); }
 </style>
 </head>
 <body>
@@ -90,10 +100,12 @@
     </div>
     <div class="header-actions">
       <button class="hbtn" id="sort-btn"><i class="ti ti-arrow-up-down"></i> Sort</button>
+      <button class="hbtn orange" id="cal-btn"><i class="ti ti-calendar"></i> <span id="cal-btn-label">Connect cal</span></button>
       <button class="hbtn" id="clear-btn"><i class="ti ti-trash"></i></button>
     </div>
   </div>
 
+  <div class="sync-bar" id="sync-bar"></div>
   <div class="progress-wrap"><div class="progress-fill" id="prog" style="width:0%"></div></div>
 
   <div class="quick-bar">
@@ -109,20 +121,24 @@
   </div>
 
   <div id="days-container"></div>
-  <div class="sync-note">Plan less, do more.</div>
+  <div class="footer-note">Plan less, do more.</div>
 </div>
 
 <script>
+const CLIENT_ID = '670822661778-odsq06vdblqnrlsgjvb00fh15gffp5ru.apps.googleusercontent.com';
+const SCOPES = 'https://www.googleapis.com/auth/calendar.calendars.readonly https://www.googleapis.com/auth/calendar.events.readonly';
 const ORANGE = '#D85A30';
 const TODAY = new Date();
+const SK = 'wktodo_tasks';
+const TK = 'wktodo_token';
+const CK = 'wktodo_cal';
+const DK = 'wktodo_caldate';
 
 function getMonWeek() {
   const jsDay = TODAY.getDay();
   const diff = jsDay === 0 ? -6 : 1 - jsDay;
   return Array.from({length:7}, (_, i) => {
-    const d = new Date(TODAY);
-    d.setDate(TODAY.getDate() + diff + i);
-    return d;
+    const d = new Date(TODAY); d.setDate(TODAY.getDate() + diff + i); return d;
   });
 }
 
@@ -139,24 +155,135 @@ document.getElementById('week-range').textContent = (() => {
   return mo(s) + ' ' + s.getDate() + ' – ' + mo(e) + ' ' + e.getDate() + ', ' + e.getFullYear();
 })();
 
-const SK = 'wktodo_tasks';
 let tasks = [];
 try { tasks = JSON.parse(localStorage.getItem(SK) || '[]'); } catch(e) {}
 tasks = tasks.map(t => ({ ...t, id: String(t.id) }));
 let nid = Math.max(0, ...tasks.map(t => parseInt(t.id) || 0)) + 1;
 let sortMode = null, collapsed = {}, dragId = null;
+let calTasks = [];
+let accessToken = localStorage.getItem(TK) || null;
 
 function save() { try { localStorage.setItem(SK, JSON.stringify(tasks)); } catch(e) {} }
 function newId() { return String(nid++); }
 
+function setSyncBar(msg, spin) {
+  const el = document.getElementById('sync-bar');
+  el.innerHTML = spin ? '<i class="ti ti-refresh spin"></i> ' + msg : msg;
+}
+
+function fmtTime(iso) {
+  if (!iso || iso.length === 10) return '';
+  const d = new Date(iso); if (isNaN(d)) return '';
+  let h = d.getHours(), m = d.getMinutes();
+  const ap = h >= 12 ? 'pm' : 'am'; h = h % 12 || 12;
+  return m ? h + ':' + String(m).padStart(2,'0') + ap : h + ap;
+}
+
+function updateCalBtn() {
+  const lbl = document.getElementById('cal-btn-label');
+  const btn = document.getElementById('cal-btn');
+  if (accessToken) {
+    lbl.textContent = 'Sync cal';
+    btn.title = 'Sync Google Calendar';
+  } else {
+    lbl.textContent = 'Connect cal';
+    btn.title = 'Connect Google Calendar';
+  }
+}
+
+async function fetchCalendar(force) {
+  if (!accessToken) return;
+  const todStr = dateKey(TODAY);
+  const cached = localStorage.getItem(CK);
+  const cachedD = localStorage.getItem(DK);
+  if (!force && cached && cachedD === todStr) {
+    try { return JSON.parse(cached); } catch(e) {}
+  }
+  setSyncBar('Syncing calendar…', true);
+  const ws = WEEK[0].toISOString();
+  const we = new Date(WEEK[6]); we.setHours(23,59,59);
+  try {
+    const resp = await fetch(
+      'https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=' +
+      encodeURIComponent(ws) + '&timeMax=' + encodeURIComponent(we.toISOString()) +
+      '&singleEvents=true&orderBy=startTime&maxResults=50',
+      { headers: { Authorization: 'Bearer ' + accessToken } }
+    );
+    if (resp.status === 401) {
+      accessToken = null;
+      localStorage.removeItem(TK);
+      updateCalBtn();
+      setSyncBar('Session expired — reconnect calendar', false);
+      return;
+    }
+    const data = await resp.json();
+    const events = (data.items || []).map(ev => ({
+      title: ev.summary || 'Untitled',
+      start: ev.start.dateTime || ev.start.date,
+      allDay: !!ev.start.date && !ev.start.dateTime
+    }));
+    localStorage.setItem(CK, JSON.stringify(events));
+    localStorage.setItem(DK, todStr);
+    setSyncBar('Calendar synced · ' + events.length + ' event' + (events.length !== 1 ? 's' : ''), false);
+    return events;
+  } catch(err) {
+    setSyncBar('Calendar sync failed', false);
+    try { return JSON.parse(cached || '[]'); } catch(e) { return []; }
+  }
+}
+
+function eventsToCalTasks(evs) {
+  if (!evs) return [];
+  return evs.flatMap(ev => {
+    const s = ev.start || ''; let col = -1, time = '';
+    if (ev.allDay || s.length === 10) {
+      const ed = new Date(s + 'T00:00:00');
+      col = WEEK.findIndex(d => dateKey(d) === dateKey(ed));
+    } else {
+      const ed = new Date(s);
+      if (!isNaN(ed)) { col = WEEK.findIndex(d => dateKey(d) === dateKey(ed)); time = fmtTime(s); }
+    }
+    if (col < 0) return [];
+    return [{ id: 'cal_' + Math.random().toString(36).slice(2), text: ev.title, day: col, priority: 'none', done: false, isCal: true, time }];
+  }).sort((a,b) => a.time.localeCompare(b.time));
+}
+
+function connectCalendar() {
+  const client = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPES,
+    callback: async (resp) => {
+      if (resp.error) { setSyncBar('Auth failed: ' + resp.error, false); return; }
+      accessToken = resp.access_token;
+      localStorage.setItem(TK, accessToken);
+      updateCalBtn();
+      const evs = await fetchCalendar(true);
+      calTasks = eventsToCalTasks(evs);
+      render();
+    }
+  });
+  client.requestAccessToken();
+}
+
+document.getElementById('cal-btn').addEventListener('click', async () => {
+  if (accessToken) {
+    const evs = await fetchCalendar(true);
+    calTasks = eventsToCalTasks(evs);
+    render();
+  } else {
+    connectCalendar();
+  }
+});
+
 function allForDay(di) {
+  const cal = calTasks.filter(t => t.day === di);
   const usr = tasks.filter(t => t.day === di);
   if (sortMode === 'priority') {
     const o = {high:0,med:1,low:2,none:3};
-    return [...usr].sort((a,b) => o[a.priority] - o[b.priority]);
+    return [...cal, ...usr].sort((a,b) => o[a.priority] - o[b.priority]);
   }
-  if (sortMode === 'status') return [...usr].sort((a,b) => a.done - b.done);
-  return usr;
+  if (sortMode === 'status') return [...cal, ...usr].sort((a,b) => a.done - b.done);
+  return [...cal, ...usr];
 }
 
 function updateProgress() {
@@ -167,7 +294,6 @@ function updateProgress() {
 function render() {
   const container = document.getElementById('days-container');
   container.innerHTML = '';
-
   WEEK.forEach((dt, di) => {
     const isToday = di === todayColIdx;
     const dayTasks = allForDay(di);
@@ -198,34 +324,41 @@ function render() {
 
       dayTasks.forEach(t => {
         const row = document.createElement('div');
-        row.className = 'task-row';
-        row.draggable = true;
+        row.className = 'task-row' + (t.isCal ? ' cal-row' : '');
+        if (!t.isCal) row.draggable = true;
         const tid = String(t.id);
         const dotHtml = t.priority !== 'none' ? '<span class="pri-dot p-' + t.priority + '"></span>' : '';
 
         row.innerHTML =
-          '<div class="check-box' + (t.done ? ' checked' : '') + '" data-check="' + tid + '" role="checkbox" aria-checked="' + t.done + '" style="' + (t.done ? 'background:'+ORANGE+';border-color:'+ORANGE : '') + '">' +
+          '<div class="check-box' + (t.done ? ' checked' : '') + (t.isCal ? ' cal' : '') + '"' +
+            (!t.isCal ? ' data-check="' + tid + '"' : '') +
+            ' role="checkbox" aria-checked="' + t.done + '"' +
+            ' style="' + (t.done ? 'background:'+ORANGE+';border-color:'+ORANGE : '') + '">' +
             (t.done ? '<i class="ti ti-check" style="font-size:12px;color:#fff"></i>' : '') +
           '</div>' +
           dotHtml +
           '<span class="task-label' + (t.done ? ' done' : '') + '">' + t.text + '</span>' +
-          '<button class="task-del" data-del="' + tid + '" aria-label="Delete task"><i class="ti ti-x"></i></button>';
+          (t.time ? '<span class="task-time">' + t.time + '</span>' : '') +
+          (t.isCal ? '<span class="cal-badge">CAL</span>' : '') +
+          (!t.isCal ? '<button class="task-del" data-del="' + tid + '" aria-label="Delete"><i class="ti ti-x"></i></button>' : '');
 
-        row.addEventListener('dragstart', () => dragId = tid);
-        row.addEventListener('dragend', () => dragId = null);
-        row.addEventListener('dragover', e => { e.preventDefault(); row.style.opacity = '.5'; });
-        row.addEventListener('dragleave', () => row.style.opacity = '');
-        row.addEventListener('drop', e => {
-          e.preventDefault(); row.style.opacity = '';
-          if (dragId && dragId !== tid) {
-            const fi = tasks.findIndex(x => String(x.id) === dragId);
-            const ti2 = tasks.findIndex(x => String(x.id) === tid);
-            if (fi > -1 && ti2 > -1) {
-              const [mv] = tasks.splice(fi, 1); mv.day = di;
-              tasks.splice(ti2, 0, mv); save(); render();
+        if (!t.isCal) {
+          row.addEventListener('dragstart', () => dragId = tid);
+          row.addEventListener('dragend', () => dragId = null);
+          row.addEventListener('dragover', e => { e.preventDefault(); row.style.opacity = '.5'; });
+          row.addEventListener('dragleave', () => row.style.opacity = '');
+          row.addEventListener('drop', e => {
+            e.preventDefault(); row.style.opacity = '';
+            if (dragId && dragId !== tid) {
+              const fi = tasks.findIndex(x => String(x.id) === dragId);
+              const ti2 = tasks.findIndex(x => String(x.id) === tid);
+              if (fi > -1 && ti2 > -1) {
+                const [mv] = tasks.splice(fi, 1); mv.day = di;
+                tasks.splice(ti2, 0, mv); save(); render();
+              }
             }
-          }
-        });
+          });
+        }
         body.appendChild(row);
       });
 
@@ -257,7 +390,6 @@ function render() {
       };
       inp.addEventListener('keydown', e => { if (e.key === 'Enter') doAdd(); });
       addRow.querySelector('button').addEventListener('click', doAdd);
-
       body.appendChild(addRow);
       block.appendChild(body);
     }
@@ -299,7 +431,16 @@ document.getElementById('clear-btn').addEventListener('click', () => {
   tasks = tasks.filter(t => !t.done); save(); render();
 });
 
+updateCalBtn();
 render();
+
+// Auto-sync if token exists
+if (accessToken) {
+  fetchCalendar(false).then(evs => {
+    calTasks = eventsToCalTasks(evs);
+    render();
+  });
+}
 </script>
 </body>
 </html>
