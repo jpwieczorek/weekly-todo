@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -197,6 +198,7 @@ let sortMode = null, collapsed = {}, dragId = null;
 let calTasks = [];
 let accessToken = localStorage.getItem(TK) || null;
 let resetHandled = false;
+let hasScrolledToToday = false;
 
 function setStatus(msg, spin) {
   const el = document.getElementById('status-bar');
@@ -285,6 +287,18 @@ onSnapshot(query(tasksCol), async (snapshot) => {
   setStatus('', false);
   render();
   updateProgress();
+
+  // Scroll to today once after the first render
+  if (!hasScrolledToToday && todayColIdx >= 0) {
+    hasScrolledToToday = true;
+    setTimeout(() => {
+      const dayBlocks = document.querySelectorAll('.day-block');
+      if (dayBlocks[todayColIdx]) {
+        dayBlocks[todayColIdx].scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 300);
+  }
+
 }, () => setStatus('Sync error - check connection', false));
 
 async function saveTask(task) {
