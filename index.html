@@ -77,6 +77,20 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .app-logo { width: 32px; height: 32px; border-radius: 8px; }
   .footer-note { font-size: 11px; color: var(--text-faint); text-align: center; padding: 24px 0 0; }
+
+  /* Modal */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
+  .modal { background: var(--surface); border-radius: 16px; padding: 24px; max-width: 420px; width: 100%; max-height: 80vh; overflow-y: auto; }
+  .modal h2 { font-size: 20px; font-weight: 900; margin-bottom: 4px; }
+  .modal p { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; }
+  .modal-task { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 0.5px solid var(--border); font-size: 14px; }
+  .modal-task:last-of-type { border-bottom: none; }
+  .modal-day-label { font-size: 10px; font-weight: 700; color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em; flex-shrink: 0; width: 28px; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+  .modal-btn { flex: 1; padding: 12px; border-radius: 10px; border: none; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 700; transition: opacity .15s; }
+  .modal-btn.primary { background: var(--orange); color: #fff; }
+  .modal-btn.secondary { background: var(--border); color: var(--text-muted); }
+  .modal-btn:hover { opacity: .85; }
 </style>
 </head>
 <body>
@@ -101,7 +115,7 @@
 
   <div class="quick-bar">
     <i class="ti ti-plus" style="font-size:15px;color:#D85A30"></i>
-    <input type="text" id="quick-input" placeholder="Quick add a task…" autocomplete="off" />
+    <input type="text" id="quick-input" placeholder="Quick add a task..." autocomplete="off" />
     <select id="quick-day-sel"></select>
     <select id="quick-pri-sel">
       <option value="none">—</option>
@@ -115,9 +129,21 @@
   <div class="footer-note">Plan less, do more.</div>
 </div>
 
+<div class="modal-overlay" id="reset-modal" style="display:none">
+  <div class="modal">
+    <h2>New week!</h2>
+    <p>You have unfinished tasks from last week. What would you like to do?</p>
+    <div id="modal-task-list"></div>
+    <div class="modal-actions">
+      <button class="modal-btn secondary" id="modal-fresh">Start fresh</button>
+      <button class="modal-btn primary" id="modal-carry">Carry all over</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, query } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, collection, doc, setDoc, deleteDoc, addDoc, onSnapshot, query } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyA_lIC5IA-DSxAXzViPDzc9PtEiQVZ_7mc",
@@ -131,6 +157,7 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 const tasksCol = collection(db, 'tasks');
+const archiveCol = collection(db, 'archived_tasks');
 
 const CLIENT_ID = '670822661778-odsq06vdblqnrlsgjvb00fh15gffp5ru.apps.googleusercontent.com';
 const SCOPES = 'https://www.googleapis.com/auth/calendar.calendars.readonly https://www.googleapis.com/auth/calendar.events.readonly';
@@ -139,12 +166,14 @@ const TODAY = new Date();
 const TK = 'wktodo_token';
 const CK = 'wktodo_cal';
 const DK = 'wktodo_caldate';
+const RESET_KEY = 'wktodo_reset_week';
 
-function getMonWeek() {
-  const jsDay = TODAY.getDay();
+function getMonWeek(fromDate) {
+  const d = fromDate || TODAY;
+  const jsDay = d.getDay();
   const diff = jsDay === 0 ? -6 : 1 - jsDay;
   return Array.from({length:7}, (_, i) => {
-    const d = new Date(TODAY); d.setDate(TODAY.getDate() + diff + i); return d;
+    const dt = new Date(d); dt.setDate(d.getDate() + diff + i); return dt;
   });
 }
 
@@ -154,6 +183,7 @@ const DAY_SHORT = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
 function dateKey(d) { return d.toISOString().slice(0,10); }
 const todayColIdx = WEEK.findIndex(d => dateKey(d) === dateKey(TODAY));
+const weekStartKey = dateKey(WEEK[0]);
 
 document.getElementById('week-range').textContent = (() => {
   const s = WEEK[0], e = WEEK[6];
@@ -165,6 +195,7 @@ let tasks = [];
 let sortMode = null, collapsed = {}, dragId = null;
 let calTasks = [];
 let accessToken = localStorage.getItem(TK) || null;
+let resetHandled = false;
 
 function setStatus(msg, spin) {
   const el = document.getElementById('status-bar');
@@ -181,17 +212,83 @@ function fmtTime(iso) {
 
 function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
 
+function isTaskFromPreviousWeek(task) {
+  if (task.weekStart && task.weekStart < weekStartKey) return true;
+  return false;
+}
+
+async function archiveTask(task) {
+  try {
+    await addDoc(archiveCol, { ...task, archivedAt: new Date().toISOString() });
+    await deleteDoc(doc(db, 'tasks', String(task.id)));
+  } catch(e) { console.error('Archive failed', e); }
+}
+
+async function handleWeekReset(oldTasks) {
+  const lastResetWeek = localStorage.getItem(RESET_KEY);
+  if (lastResetWeek === weekStartKey) return;
+  if (oldTasks.length === 0) {
+    localStorage.setItem(RESET_KEY, weekStartKey);
+    return;
+  }
+
+  const modal = document.getElementById('reset-modal');
+  const taskList = document.getElementById('modal-task-list');
+  taskList.innerHTML = '';
+  oldTasks.forEach(t => {
+    const row = document.createElement('div');
+    row.className = 'modal-task';
+    row.innerHTML = '<span class="modal-day-label">' + DAY_SHORT[t.day] + '</span><span style="flex:1">' + t.text + '</span>';
+    taskList.appendChild(row);
+  });
+
+  modal.style.display = 'flex';
+
+  document.getElementById('modal-carry').onclick = async () => {
+    modal.style.display = 'none';
+    localStorage.setItem(RESET_KEY, weekStartKey);
+    for (const t of oldTasks) {
+      const newTask = { ...t, id: newId(), weekStart: weekStartKey, done: false };
+      await setDoc(doc(db, 'tasks', String(newTask.id)), newTask);
+      await archiveTask(t);
+    }
+  };
+
+  document.getElementById('modal-fresh').onclick = async () => {
+    modal.style.display = 'none';
+    localStorage.setItem(RESET_KEY, weekStartKey);
+    for (const t of oldTasks) {
+      await archiveTask(t);
+    }
+  };
+}
+
 // Firebase real-time sync
 setStatus('Connecting...', true);
-onSnapshot(query(tasksCol), (snapshot) => {
+onSnapshot(query(tasksCol), async (snapshot) => {
   tasks = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
+
+  // Auto-archive completed tasks from previous weeks
+  const completedOld = tasks.filter(t => t.weekStart && t.weekStart < weekStartKey && t.done);
+  for (const t of completedOld) {
+    await archiveTask(t);
+  }
+
+  // Check for incomplete tasks from previous weeks — show reset modal once
+  if (!resetHandled) {
+    resetHandled = true;
+    const incompleteOld = tasks.filter(t => t.weekStart && t.weekStart < weekStartKey && !t.done);
+    await handleWeekReset(incompleteOld);
+  }
+
   setStatus('', false);
   render();
   updateProgress();
 }, () => setStatus('Sync error - check connection', false));
 
 async function saveTask(task) {
-  try { await setDoc(doc(db, 'tasks', String(task.id)), task); }
+  const taskWithWeek = { ...task, weekStart: weekStartKey };
+  try { await setDoc(doc(db, 'tasks', String(task.id)), taskWithWeek); }
   catch(e) { console.error('Save failed', e); }
 }
 
@@ -285,7 +382,7 @@ document.getElementById('cal-btn').addEventListener('click', async () => {
 // Render
 function allForDay(di) {
   const cal = calTasks.filter(t => t.day === di);
-  const usr = tasks.filter(t => t.day === di);
+  const usr = tasks.filter(t => t.day === di && (!t.weekStart || t.weekStart >= weekStartKey));
   if (sortMode === 'priority') {
     const o = {high:0,med:1,low:2,none:3};
     return [...cal, ...usr].sort((a,b) => o[a.priority||'none'] - o[b.priority||'none']);
@@ -295,7 +392,8 @@ function allForDay(di) {
 }
 
 function updateProgress() {
-  const tot = tasks.length, don = tasks.filter(t => t.done).length;
+  const currentTasks = tasks.filter(t => !t.weekStart || t.weekStart >= weekStartKey);
+  const tot = currentTasks.length, don = currentTasks.filter(t => t.done).length;
   document.getElementById('prog').style.width = (tot ? Math.round(don/tot*100) : 0) + '%';
 }
 
@@ -306,8 +404,9 @@ function render() {
     const isToday = di === todayColIdx;
     const dayTasks = allForDay(di);
     const isOpen = collapsed[di] === undefined ? true : collapsed[di];
-    const userCount = tasks.filter(t => t.day === di).length;
-    const doneCount = tasks.filter(t => t.day === di && t.done).length;
+    const userTasks = tasks.filter(t => t.day === di && (!t.weekStart || t.weekStart >= weekStartKey));
+    const userCount = userTasks.length;
+    const doneCount = userTasks.filter(t => t.done).length;
 
     const block = document.createElement('div');
     block.className = 'day-block';
@@ -433,7 +532,7 @@ document.getElementById('sort-btn').addEventListener('click', function() {
 });
 
 document.getElementById('clear-btn').addEventListener('click', () => {
-  tasks.filter(t => t.done).forEach(t => removeTask(t.id));
+  tasks.filter(t => t.done && (!t.weekStart || t.weekStart >= weekStartKey)).forEach(t => removeTask(t.id));
 });
 
 updateCalBtn();
