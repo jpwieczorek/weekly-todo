@@ -57,9 +57,11 @@
   .day-count { font-size: 12px; color: var(--text-faint); }
   .chevron { font-size: 16px; color: var(--text-faint); transition: transform .2s; display: inline-block; }
   .chevron.open { transform: rotate(180deg); }
-  .day-body { padding-bottom: 12px; }
+  .day-body { padding-bottom: 12px; transition: background .15s; border-radius: 8px; }
+  .day-body.drag-over { background: rgba(216,90,48,0.07); }
   .task-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 0.5px solid var(--border); }
   .task-row:last-of-type { border-bottom: none; }
+  .task-row.dragging { opacity: 0.4; }
   .check-box { width: 22px; height: 22px; border-radius: 5px; border: 1.5px solid var(--check-border); flex-shrink: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .15s; background: none; }
   .check-box.checked { background: var(--orange); border-color: var(--orange); }
   .check-box.cal { border-color: var(--orange); }
@@ -327,10 +329,8 @@ async function fetchCalendar(force) {
   }
   setStatus('Syncing calendar...', true);
 
-  // FIX: Build timeMin/timeMax using local timezone offset so the window
-  // covers the correct local-time week, not UTC midnight boundaries.
   const pad = n => String(n).padStart(2,'0');
-  const tzOff = WEEK[0].getTimezoneOffset(); // minutes behind UTC (positive = behind)
+  const tzOff = WEEK[0].getTimezoneOffset();
   const tzSign = tzOff <= 0 ? '+' : '-';
   const tzHH = pad(Math.floor(Math.abs(tzOff) / 60));
   const tzMM = pad(Math.abs(tzOff) % 60);
@@ -372,15 +372,12 @@ function eventsToCalTasks(evs) {
   return evs.flatMap(ev => {
     const s = ev.start || ''; let col = -1, time = '';
     if (ev.allDay || s.length === 10) {
-      // All-day events: append T00:00:00 so Date() parses in local time, not UTC
       const ed = new Date(s + 'T00:00:00');
       col = WEEK.findIndex(d => dateKey(d) === dateKey(ed));
     } else {
-      // Timed events: use toLocaleDateString('en-CA') to get YYYY-MM-DD in
-      // local time — prevents UTC date being one day behind local date.
       const ed = new Date(s);
       if (!isNaN(ed)) {
-        const localKey = ed.toLocaleDateString('en-CA'); // YYYY-MM-DD local
+        const localKey = ed.toLocaleDateString('en-CA');
         col = WEEK.findIndex(d => dateKey(d) === localKey);
         time = fmtTime(s);
       }
@@ -463,6 +460,29 @@ function render() {
       const body = document.createElement('div');
       body.className = 'day-body';
 
+      // ── Drag-and-drop: drop zone on the day body ──
+      body.addEventListener('dragover', e => {
+        e.preventDefault();
+        body.classList.add('drag-over');
+      });
+      body.addEventListener('dragleave', e => {
+        // Only remove highlight when leaving the body entirely (not just moving between children)
+        if (!body.contains(e.relatedTarget)) {
+          body.classList.remove('drag-over');
+        }
+      });
+      body.addEventListener('drop', e => {
+        e.preventDefault();
+        body.classList.remove('drag-over');
+        if (dragId) {
+          const moved = tasks.find(x => String(x.id) === dragId);
+          if (moved && moved.day !== di) {
+            moved.day = di;
+            saveTask(moved);
+          }
+        }
+      });
+
       dayTasks.forEach(t => {
         const row = document.createElement('div');
         row.className = 'task-row';
@@ -483,17 +503,18 @@ function render() {
           (!t.isCal ? '<button class="task-del" data-del="' + tid + '" aria-label="Delete"><i class="ti ti-x"></i></button>' : '');
 
         if (!t.isCal) {
-          row.addEventListener('dragstart', () => dragId = tid);
-          row.addEventListener('dragend', () => dragId = null);
-          row.addEventListener('dragover', e => { e.preventDefault(); row.style.opacity = '.5'; });
-          row.addEventListener('dragleave', () => row.style.opacity = '');
-          row.addEventListener('drop', e => {
-            e.preventDefault(); row.style.opacity = '';
-            if (dragId && dragId !== tid) {
-              const moved = tasks.find(x => String(x.id) === dragId);
-              if (moved) { moved.day = di; saveTask(moved); }
-            }
+          // ── Drag-and-drop: drag source on each task row ──
+          row.addEventListener('dragstart', e => {
+            dragId = tid;
+            // Slight delay so the drag ghost renders before we dim the row
+            setTimeout(() => row.classList.add('dragging'), 0);
           });
+          row.addEventListener('dragend', () => {
+            dragId = null;
+            row.classList.remove('dragging');
+          });
+          // Allow dropping onto a task row (passes through to the day-body drop handler)
+          row.addEventListener('dragover', e => { e.preventDefault(); });
         }
         body.appendChild(row);
       });
