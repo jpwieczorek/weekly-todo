@@ -82,6 +82,28 @@
   .app-logo { width: 32px; height: 32px; border-radius: 8px; }
   .footer-note { font-size: 11px; color: var(--text-faint); text-align: center; padding: 24px 0 0; }
 
+  /* Touch drag ghost */
+  .touch-drag-ghost {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9999;
+    background: var(--surface);
+    border: 1.5px solid var(--orange);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 15px;
+    font-family: 'Inter', sans-serif;
+    color: var(--text);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+    max-width: 280px;
+    opacity: 0.92;
+    transform: scale(1.04);
+    transition: transform .1s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   /* Modal */
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
   .modal { background: var(--surface); border-radius: 16px; padding: 24px; max-width: 420px; width: 100%; max-height: 80vh; overflow-y: auto; }
@@ -202,6 +224,17 @@ let accessToken = localStorage.getItem(TK) || null;
 let resetHandled = false;
 let hasScrolledToToday = false;
 
+// ── Touch drag state ──────────────────────────────────────────────────────────
+let touchDragId = null;       // task id being dragged
+let touchGhost = null;        // floating ghost element
+let touchLongPressTimer = null;
+let touchDragging = false;    // true once long-press threshold passed
+let touchStartX = 0;
+let touchStartY = 0;
+let lastHighlightedBody = null; // day-body currently highlighted
+const LONG_PRESS_MS = 400;
+// ─────────────────────────────────────────────────────────────────────────────
+
 function setStatus(msg, spin) {
   const el = document.getElementById('status-bar');
   el.innerHTML = spin ? '<i class="ti ti-refresh spin"></i> ' + msg : msg;
@@ -216,11 +249,6 @@ function fmtTime(iso) {
 }
 
 function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
-
-function isTaskFromPreviousWeek(task) {
-  if (task.weekStart && task.weekStart < weekStartKey) return true;
-  return false;
-}
 
 async function archiveTask(task) {
   try {
@@ -273,13 +301,9 @@ setStatus('Connecting...', true);
 onSnapshot(query(tasksCol), async (snapshot) => {
   tasks = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
 
-  // Auto-archive completed tasks from previous weeks
   const completedOld = tasks.filter(t => t.weekStart && t.weekStart < weekStartKey && t.done);
-  for (const t of completedOld) {
-    await archiveTask(t);
-  }
+  for (const t of completedOld) { await archiveTask(t); }
 
-  // Check for incomplete tasks from previous weeks — show reset modal once
   if (!resetHandled) {
     resetHandled = true;
     const incompleteOld = tasks.filter(t => t.weekStart && t.weekStart < weekStartKey && !t.done);
@@ -290,7 +314,6 @@ onSnapshot(query(tasksCol), async (snapshot) => {
   render();
   updateProgress();
 
-  // Scroll to today once after the first render
   if (!hasScrolledToToday && todayColIdx >= 0) {
     hasScrolledToToday = true;
     setTimeout(() => {
@@ -313,6 +336,59 @@ async function removeTask(id) {
   try { await deleteDoc(doc(db, 'tasks', String(id))); }
   catch(e) { console.error('Delete failed', e); }
 }
+
+// ── Touch drag helpers ────────────────────────────────────────────────────────
+
+function createGhost(text) {
+  const ghost = document.createElement('div');
+  ghost.className = 'touch-drag-ghost';
+  ghost.textContent = text;
+  document.body.appendChild(ghost);
+  return ghost;
+}
+
+function moveGhost(x, y) {
+  if (!touchGhost) return;
+  touchGhost.style.left = (x - 20) + 'px';
+  touchGhost.style.top  = (y - 30) + 'px';
+}
+
+function clearGhost() {
+  if (touchGhost) { touchGhost.remove(); touchGhost = null; }
+}
+
+function clearHighlight() {
+  if (lastHighlightedBody) {
+    lastHighlightedBody.classList.remove('drag-over');
+    lastHighlightedBody = null;
+  }
+}
+
+// Given a touch point, find the day-body element and its day index underneath
+function getDayBodyAtPoint(x, y) {
+  // Temporarily hide ghost so elementFromPoint can see through it
+  if (touchGhost) touchGhost.style.display = 'none';
+  const el = document.elementFromPoint(x, y);
+  if (touchGhost) touchGhost.style.display = '';
+  if (!el) return null;
+  const body = el.closest('.day-body');
+  if (!body) return null;
+  const idx = parseInt(body.dataset.dayIdx);
+  return isNaN(idx) ? null : { body, idx };
+}
+
+function cancelTouchDrag() {
+  clearTimeout(touchLongPressTimer);
+  touchLongPressTimer = null;
+  touchDragging = false;
+  touchDragId = null;
+  clearGhost();
+  clearHighlight();
+  // Remove dragging style from any row
+  document.querySelectorAll('.task-row.dragging').forEach(r => r.classList.remove('dragging'));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Google Calendar
 function updateCalBtn() {
@@ -459,27 +535,22 @@ function render() {
     if (isOpen) {
       const body = document.createElement('div');
       body.className = 'day-body';
+      body.dataset.dayIdx = di;  // used by touch drag to identify the day
 
-      // ── Drag-and-drop: drop zone on the day body ──
+      // ── Desktop drag-and-drop: drop zone on the day body ──
       body.addEventListener('dragover', e => {
         e.preventDefault();
         body.classList.add('drag-over');
       });
       body.addEventListener('dragleave', e => {
-        // Only remove highlight when leaving the body entirely (not just moving between children)
-        if (!body.contains(e.relatedTarget)) {
-          body.classList.remove('drag-over');
-        }
+        if (!body.contains(e.relatedTarget)) body.classList.remove('drag-over');
       });
       body.addEventListener('drop', e => {
         e.preventDefault();
         body.classList.remove('drag-over');
         if (dragId) {
           const moved = tasks.find(x => String(x.id) === dragId);
-          if (moved && moved.day !== di) {
-            moved.day = di;
-            saveTask(moved);
-          }
+          if (moved && moved.day !== di) { moved.day = di; saveTask(moved); }
         }
       });
 
@@ -503,18 +574,95 @@ function render() {
           (!t.isCal ? '<button class="task-del" data-del="' + tid + '" aria-label="Delete"><i class="ti ti-x"></i></button>' : '');
 
         if (!t.isCal) {
-          // ── Drag-and-drop: drag source on each task row ──
+          // ── Desktop drag events ──
           row.addEventListener('dragstart', e => {
             dragId = tid;
-            // Slight delay so the drag ghost renders before we dim the row
             setTimeout(() => row.classList.add('dragging'), 0);
           });
           row.addEventListener('dragend', () => {
             dragId = null;
             row.classList.remove('dragging');
           });
-          // Allow dropping onto a task row (passes through to the day-body drop handler)
           row.addEventListener('dragover', e => { e.preventDefault(); });
+
+          // ── Touch drag events ──
+          row.addEventListener('touchstart', e => {
+            const touch = e.touches[0];
+            touchStartX = touch.clientX;
+            touchStartY = touch.clientY;
+
+            // Start long-press timer
+            touchLongPressTimer = setTimeout(() => {
+              touchDragging = true;
+              touchDragId = tid;
+              row.classList.add('dragging');
+
+              // Vibrate briefly if supported (haptic feedback)
+              if (navigator.vibrate) navigator.vibrate(40);
+
+              // Create ghost at touch position
+              touchGhost = createGhost(t.text);
+              moveGhost(touch.clientX, touch.clientY);
+            }, LONG_PRESS_MS);
+          }, { passive: true });
+
+          row.addEventListener('touchmove', e => {
+            const touch = e.touches[0];
+            const dx = Math.abs(touch.clientX - touchStartX);
+            const dy = Math.abs(touch.clientY - touchStartY);
+
+            // If finger moved before long-press fires, cancel the drag
+            if (!touchDragging && (dx > 8 || dy > 8)) {
+              clearTimeout(touchLongPressTimer);
+              touchLongPressTimer = null;
+              return;
+            }
+
+            if (!touchDragging) return;
+            e.preventDefault(); // prevent page scroll during drag
+
+            moveGhost(touch.clientX, touch.clientY);
+
+            // Highlight the day body under the finger
+            const hit = getDayBodyAtPoint(touch.clientX, touch.clientY);
+            if (hit && hit.body !== lastHighlightedBody) {
+              clearHighlight();
+              hit.body.classList.add('drag-over');
+              lastHighlightedBody = hit.body;
+
+              // Auto-expand collapsed day
+              if (collapsed[hit.idx] === false) {
+                collapsed[hit.idx] = true;
+                render();
+              }
+            } else if (!hit) {
+              clearHighlight();
+            }
+          }, { passive: false });
+
+          row.addEventListener('touchend', e => {
+            clearTimeout(touchLongPressTimer);
+            touchLongPressTimer = null;
+
+            if (!touchDragging) return; // was a tap, not a drag
+
+            const touch = e.changedTouches[0];
+            const hit = getDayBodyAtPoint(touch.clientX, touch.clientY);
+
+            if (hit) {
+              const moved = tasks.find(x => String(x.id) === touchDragId);
+              if (moved && moved.day !== hit.idx) {
+                moved.day = hit.idx;
+                saveTask(moved);
+              }
+            }
+
+            cancelTouchDrag();
+          });
+
+          row.addEventListener('touchcancel', () => {
+            cancelTouchDrag();
+          });
         }
         body.appendChild(row);
       });
