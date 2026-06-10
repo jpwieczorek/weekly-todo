@@ -190,6 +190,7 @@ const SCOPES = 'https://www.googleapis.com/auth/calendar.calendars.readonly http
 const ORANGE = '#D85A30';
 const TODAY = new Date();
 const TK = 'wktodo_token';
+const TE = 'wktodo_token_expiry';
 const CK = 'wktodo_cal';
 const DK = 'wktodo_caldate';
 const RESET_KEY = 'wktodo_reset_week';
@@ -220,18 +221,25 @@ document.getElementById('week-range').textContent = (() => {
 let tasks = [];
 let sortMode = null, collapsed = {}, dragId = null;
 let calTasks = [];
-let accessToken = localStorage.getItem(TK) || null;
+
+// ── Token: sessionStorage with 55-min expiry ──────────────────────────────────
+const _storedToken = sessionStorage.getItem(TK);
+const _storedExpiry = parseInt(sessionStorage.getItem(TE) || '0');
+let accessToken = (_storedToken && _storedExpiry > Date.now()) ? _storedToken : null;
+if (!accessToken) { sessionStorage.removeItem(TK); sessionStorage.removeItem(TE); }
+// ─────────────────────────────────────────────────────────────────────────────
+
 let resetHandled = false;
 let hasScrolledToToday = false;
 
 // ── Touch drag state ──────────────────────────────────────────────────────────
-let touchDragId = null;       // task id being dragged
-let touchGhost = null;        // floating ghost element
+let touchDragId = null;
+let touchGhost = null;
 let touchLongPressTimer = null;
-let touchDragging = false;    // true once long-press threshold passed
+let touchDragging = false;
 let touchStartX = 0;
 let touchStartY = 0;
-let lastHighlightedBody = null; // day-body currently highlighted
+let lastHighlightedBody = null;
 const LONG_PRESS_MS = 400;
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -364,9 +372,7 @@ function clearHighlight() {
   }
 }
 
-// Given a touch point, find the day-body element and its day index underneath
 function getDayBodyAtPoint(x, y) {
-  // Temporarily hide ghost so elementFromPoint can see through it
   if (touchGhost) touchGhost.style.display = 'none';
   const el = document.elementFromPoint(x, y);
   if (touchGhost) touchGhost.style.display = '';
@@ -384,7 +390,6 @@ function cancelTouchDrag() {
   touchDragId = null;
   clearGhost();
   clearHighlight();
-  // Remove dragging style from any row
   document.querySelectorAll('.task-row.dragging').forEach(r => r.classList.remove('dragging'));
 }
 
@@ -424,8 +429,12 @@ async function fetchCalendar(force) {
       { headers: { Authorization: 'Bearer ' + accessToken } }
     );
     if (resp.status === 401) {
-      accessToken = null; localStorage.removeItem(TK); updateCalBtn();
-      setStatus('Session expired - reconnect calendar', false); return;
+      accessToken = null;
+      sessionStorage.removeItem(TK);
+      sessionStorage.removeItem(TE);
+      updateCalBtn();
+      setStatus('Session expired - reconnect calendar', false);
+      return;
     }
     const data = await resp.json();
     const events = (data.items || []).map(ev => ({
@@ -469,7 +478,8 @@ function connectCalendar() {
     callback: async (resp) => {
       if (resp.error) { setStatus('Auth failed: ' + resp.error, false); return; }
       accessToken = resp.access_token;
-      localStorage.setItem(TK, accessToken);
+      sessionStorage.setItem(TK, accessToken);
+      sessionStorage.setItem(TE, String(Date.now() + 55 * 60 * 1000));
       updateCalBtn();
       const evs = await fetchCalendar(true);
       calTasks = eventsToCalTasks(evs);
@@ -485,6 +495,11 @@ document.getElementById('cal-btn').addEventListener('click', async () => {
     calTasks = eventsToCalTasks(evs); render();
   } else { connectCalendar(); }
 });
+
+// Auto-sync on load if valid token exists in sessionStorage
+if (accessToken) {
+  fetchCalendar(false).then(evs => { calTasks = eventsToCalTasks(evs); render(); });
+}
 
 // Render
 function allForDay(di) {
@@ -535,9 +550,8 @@ function render() {
     if (isOpen) {
       const body = document.createElement('div');
       body.className = 'day-body';
-      body.dataset.dayIdx = di;  // used by touch drag to identify the day
+      body.dataset.dayIdx = di;
 
-      // ── Desktop drag-and-drop: drop zone on the day body ──
       body.addEventListener('dragover', e => {
         e.preventDefault();
         body.classList.add('drag-over');
@@ -574,7 +588,6 @@ function render() {
           (!t.isCal ? '<button class="task-del" data-del="' + tid + '" aria-label="Delete"><i class="ti ti-x"></i></button>' : '');
 
         if (!t.isCal) {
-          // ── Desktop drag events ──
           row.addEventListener('dragstart', e => {
             dragId = tid;
             setTimeout(() => row.classList.add('dragging'), 0);
@@ -585,22 +598,15 @@ function render() {
           });
           row.addEventListener('dragover', e => { e.preventDefault(); });
 
-          // ── Touch drag events ──
           row.addEventListener('touchstart', e => {
             const touch = e.touches[0];
             touchStartX = touch.clientX;
             touchStartY = touch.clientY;
-
-            // Start long-press timer
             touchLongPressTimer = setTimeout(() => {
               touchDragging = true;
               touchDragId = tid;
               row.classList.add('dragging');
-
-              // Vibrate briefly if supported (haptic feedback)
               if (navigator.vibrate) navigator.vibrate(40);
-
-              // Create ghost at touch position
               touchGhost = createGhost(t.text);
               moveGhost(touch.clientX, touch.clientY);
             }, LONG_PRESS_MS);
@@ -610,27 +616,19 @@ function render() {
             const touch = e.touches[0];
             const dx = Math.abs(touch.clientX - touchStartX);
             const dy = Math.abs(touch.clientY - touchStartY);
-
-            // If finger moved before long-press fires, cancel the drag
             if (!touchDragging && (dx > 8 || dy > 8)) {
               clearTimeout(touchLongPressTimer);
               touchLongPressTimer = null;
               return;
             }
-
             if (!touchDragging) return;
-            e.preventDefault(); // prevent page scroll during drag
-
+            e.preventDefault();
             moveGhost(touch.clientX, touch.clientY);
-
-            // Highlight the day body under the finger
             const hit = getDayBodyAtPoint(touch.clientX, touch.clientY);
             if (hit && hit.body !== lastHighlightedBody) {
               clearHighlight();
               hit.body.classList.add('drag-over');
               lastHighlightedBody = hit.body;
-
-              // Auto-expand collapsed day
               if (collapsed[hit.idx] === false) {
                 collapsed[hit.idx] = true;
                 render();
@@ -643,12 +641,9 @@ function render() {
           row.addEventListener('touchend', e => {
             clearTimeout(touchLongPressTimer);
             touchLongPressTimer = null;
-
-            if (!touchDragging) return; // was a tap, not a drag
-
+            if (!touchDragging) return;
             const touch = e.changedTouches[0];
             const hit = getDayBodyAtPoint(touch.clientX, touch.clientY);
-
             if (hit) {
               const moved = tasks.find(x => String(x.id) === touchDragId);
               if (moved && moved.day !== hit.idx) {
@@ -656,13 +651,10 @@ function render() {
                 saveTask(moved);
               }
             }
-
             cancelTouchDrag();
           });
 
-          row.addEventListener('touchcancel', () => {
-            cancelTouchDrag();
-          });
+          row.addEventListener('touchcancel', () => { cancelTouchDrag(); });
         }
         body.appendChild(row);
       });
@@ -739,9 +731,6 @@ document.getElementById('clear-btn').addEventListener('click', () => {
 });
 
 updateCalBtn();
-if (accessToken) {
-  fetchCalendar(false).then(evs => { calTasks = eventsToCalTasks(evs); render(); });
-}
 </script>
 </body>
 </html>
