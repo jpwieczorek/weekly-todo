@@ -326,12 +326,24 @@ async function fetchCalendar(force) {
     try { return JSON.parse(cached); } catch(e) {}
   }
   setStatus('Syncing calendar...', true);
-  const ws = WEEK[0].toISOString();
-  const we = new Date(WEEK[6]); we.setHours(23,59,59);
+
+  // FIX: Build timeMin/timeMax using local timezone offset so the window
+  // covers the correct local-time week, not UTC midnight boundaries.
+  const pad = n => String(n).padStart(2,'0');
+  const tzOff = WEEK[0].getTimezoneOffset(); // minutes behind UTC (positive = behind)
+  const tzSign = tzOff <= 0 ? '+' : '-';
+  const tzHH = pad(Math.floor(Math.abs(tzOff) / 60));
+  const tzMM = pad(Math.abs(tzOff) % 60);
+  const tzStr = tzSign + tzHH + ':' + tzMM;
+  const localISO = d => d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + 'T00:00:00';
+  const ws = localISO(WEEK[0]) + tzStr;
+  const weDate = new Date(WEEK[6]);
+  const weStr = weDate.getFullYear() + '-' + pad(weDate.getMonth()+1) + '-' + pad(weDate.getDate()) + 'T23:59:59' + tzStr;
+
   try {
     const resp = await fetch(
       'https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=' +
-      encodeURIComponent(ws) + '&timeMax=' + encodeURIComponent(we.toISOString()) +
+      encodeURIComponent(ws) + '&timeMax=' + encodeURIComponent(weStr) +
       '&singleEvents=true&orderBy=startTime&maxResults=50',
       { headers: { Authorization: 'Bearer ' + accessToken } }
     );
@@ -360,11 +372,18 @@ function eventsToCalTasks(evs) {
   return evs.flatMap(ev => {
     const s = ev.start || ''; let col = -1, time = '';
     if (ev.allDay || s.length === 10) {
+      // All-day events: append T00:00:00 so Date() parses in local time, not UTC
       const ed = new Date(s + 'T00:00:00');
       col = WEEK.findIndex(d => dateKey(d) === dateKey(ed));
     } else {
+      // Timed events: use toLocaleDateString('en-CA') to get YYYY-MM-DD in
+      // local time — prevents UTC date being one day behind local date.
       const ed = new Date(s);
-      if (!isNaN(ed)) { col = WEEK.findIndex(d => dateKey(d) === dateKey(ed)); time = fmtTime(s); }
+      if (!isNaN(ed)) {
+        const localKey = ed.toLocaleDateString('en-CA'); // YYYY-MM-DD local
+        col = WEEK.findIndex(d => dateKey(d) === localKey);
+        time = fmtTime(s);
+      }
     }
     if (col < 0) return [];
     return [{ id: 'cal_' + Math.random().toString(36).slice(2), text: ev.title, day: col, done: false, isCal: true, time }];
