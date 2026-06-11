@@ -16,6 +16,8 @@
 <style>
   :root {
     --orange: #D85A30;
+    --work: #3B82F6;
+    --work-bg: rgba(59,130,246,0.08);
     --bg: #f5f5f3;
     --surface: #ffffff;
     --border: rgba(0,0,0,0.12);
@@ -31,6 +33,7 @@
       --border: rgba(255,255,255,0.1); --border-strong: rgba(255,255,255,0.2);
       --text: #f0ede8; --text-muted: #999; --text-faint: #666;
       --check-border: rgba(255,255,255,0.3);
+      --work-bg: rgba(59,130,246,0.12);
     }
   }
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -39,16 +42,25 @@
   .app-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }
   .week-label { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 2px; }
   .week-range { font-size: 13px; color: var(--text-muted); }
-  .header-actions { display: flex; gap: 8px; align-items: center; }
+  .header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
   .hbtn { background: var(--surface); border: 0.5px solid var(--border-strong); border-radius: 8px; padding: 0 10px; height: 32px; cursor: pointer; color: var(--text-muted); font-size: 12px; font-family: 'Inter', sans-serif; display: flex; align-items: center; gap: 5px; transition: background .15s; }
   .hbtn:active { background: var(--border); }
   .hbtn.orange { color: var(--orange); border-color: var(--orange); }
+  .hbtn.active-work { color: var(--work); border-color: var(--work); background: var(--work-bg); }
+  .hbtn.active-personal { color: var(--orange); border-color: var(--orange); background: rgba(216,90,48,0.08); }
   .progress-wrap { height: 2px; background: var(--border); border-radius: 1px; margin-bottom: 20px; overflow: hidden; }
   .progress-fill { height: 100%; background: var(--orange); border-radius: 1px; transition: width .4s; }
   .quick-bar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--surface); border-radius: 12px; margin-bottom: 20px; border: 0.5px solid var(--border); }
   .quick-bar input { flex: 1; border: none; background: none; font-size: 15px; font-family: 'Inter', sans-serif; color: var(--text); outline: none; }
   .quick-bar input::placeholder { color: var(--text-faint); }
   .quick-bar select { border: 0.5px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text-muted); font-size: 12px; padding: 4px 6px; outline: none; cursor: pointer; font-family: 'Inter', sans-serif; }
+
+  /* Category toggle pill */
+  .cat-toggle { display: flex; border-radius: 6px; overflow: hidden; border: 0.5px solid var(--border); flex-shrink: 0; }
+  .cat-toggle button { background: none; border: none; cursor: pointer; font-size: 11px; font-family: 'Inter', sans-serif; font-weight: 700; padding: 4px 8px; color: var(--text-faint); transition: background .12s, color .12s; line-height: 1; }
+  .cat-toggle button.sel-personal { background: rgba(216,90,48,0.12); color: var(--orange); }
+  .cat-toggle button.sel-work { background: var(--work-bg); color: var(--work); }
+
   .day-block { border-top: 1.5px solid var(--border-strong); margin-bottom: 12px; padding-bottom: 4px; }
   .day-header-row { display: flex; align-items: center; justify-content: space-between; padding: 18px 0 12px; cursor: pointer; user-select: none; }
   .day-title { font-size: 24px; font-weight: 900; letter-spacing: -.02em; color: var(--text); text-transform: uppercase; line-height: 1; }
@@ -60,9 +72,13 @@
   .chevron.open { transform: rotate(180deg); }
   .day-body { padding-bottom: 18px; transition: background .15s; border-radius: 8px; }
   .day-body.drag-over { background: rgba(216,90,48,0.07); }
-  .task-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 0.5px solid var(--border); }
+
+  /* Task row with category left border */
+  .task-row { display: flex; align-items: center; gap: 12px; padding: 10px 0 10px 8px; border-bottom: 0.5px solid var(--border); border-left: 3px solid transparent; margin-left: -8px; padding-left: 11px; border-radius: 2px; transition: border-left-color .15s; }
   .task-row:last-of-type { border-bottom: none; }
   .task-row.dragging { opacity: 0.4; }
+  .task-row.cat-work { border-left-color: var(--work); }
+
   .check-box { width: 22px; height: 22px; border-radius: 5px; border: 1.5px solid var(--check-border); flex-shrink: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .15s; background: none; }
   .check-box.checked { background: var(--orange); border-color: var(--orange); }
   .check-box.cal { border-color: var(--orange); }
@@ -70,6 +86,10 @@
   .task-label.done { text-decoration: line-through; color: var(--text-faint); }
   .task-time { font-size: 11px; color: var(--orange); font-weight: 700; flex-shrink: 0; }
   .cal-badge { font-size: 10px; font-weight: 700; color: var(--orange); flex-shrink: 0; }
+
+  /* Work badge */
+  .work-badge { font-size: 10px; font-weight: 700; color: var(--work); flex-shrink: 0; letter-spacing: .03em; }
+
   .pri-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
   .p-high { background: #E24B4A; } .p-med { background: #EF9F27; } .p-low { background: #1D9E75; }
   .task-del { background: none; border: none; cursor: pointer; color: var(--text-faint); font-size: 16px; padding: 6px; opacity: 0.4; flex-shrink: 0; }
@@ -119,6 +139,7 @@
       </div>
     </div>
     <div class="header-actions">
+      <button class="hbtn" id="filter-btn"><i class="ti ti-filter"></i> All</button>
       <button class="hbtn" id="sort-btn"><i class="ti ti-arrow-up-down"></i> Sort</button>
       <button class="hbtn orange" id="cal-btn"><i class="ti ti-calendar"></i> <span id="cal-btn-label">Connect cal</span></button>
       <button class="hbtn" id="clear-btn"><i class="ti ti-trash"></i></button>
@@ -138,6 +159,10 @@
       <option value="med">Med</option>
       <option value="low">Low</option>
     </select>
+    <div class="cat-toggle" id="quick-cat-toggle">
+      <button data-cat="personal" class="sel-personal">Me</button>
+      <button data-cat="work">Work</button>
+    </div>
   </div>
 
   <div id="days-container"></div>
@@ -221,10 +246,12 @@ const archiveCol = collection(db, 'archived_tasks');
 let tasks = [];
 let calTasks = [];
 let sortMode = null;
+let filterMode = 'all'; // 'all' | 'work' | 'personal'
 let collapsed = {};
 let dragId = null;
 let resetHandled = false;
 let hasScrolledToToday = false;
+let quickCat = 'personal';
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Token: sessionStorage with 55-min expiry ──────────────────────────────────
@@ -488,16 +515,33 @@ if (accessToken) {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Category toggle (quick-add bar) ──────────────────────────────────────────
+document.getElementById('quick-cat-toggle').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-cat]');
+  if (!btn) return;
+  quickCat = btn.dataset.cat;
+  document.querySelectorAll('#quick-cat-toggle button').forEach(b => {
+    b.className = b.dataset.cat === quickCat ? `sel-${quickCat}` : '';
+  });
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
 // ── Render ────────────────────────────────────────────────────────────────────
 function allForDay(di) {
   const cal = calTasks.filter(t => t.day === di);
-  const usr = tasks.filter(t => t.day === di && (!t.weekStart || t.weekStart >= weekStartKey));
+  let usr = tasks.filter(t => t.day === di && (!t.weekStart || t.weekStart >= weekStartKey));
+
+  // Apply category filter (cal tasks always shown in 'all', hidden in work/personal modes)
+  if (filterMode === 'work') usr = usr.filter(t => t.category === 'work');
+  if (filterMode === 'personal') usr = usr.filter(t => (t.category || 'personal') === 'personal');
+
+  const combined = filterMode === 'all' ? [...cal, ...usr] : [...usr];
   if (sortMode === 'priority') {
     const o = {high: 0, med: 1, low: 2, none: 3};
-    return [...cal, ...usr].sort((a, b) => o[a.priority || 'none'] - o[b.priority || 'none']);
+    return combined.sort((a, b) => o[a.priority || 'none'] - o[b.priority || 'none']);
   }
-  if (sortMode === 'status') return [...cal, ...usr].sort((a, b) => a.done - b.done);
-  return [...cal, ...usr];
+  if (sortMode === 'status') return combined.sort((a, b) => a.done - b.done);
+  return combined;
 }
 
 function updateProgress() {
@@ -552,7 +596,8 @@ function render() {
 
       dayTasks.forEach(t => {
         const row = document.createElement('div');
-        row.className = 'task-row';
+        const isWork = !t.isCal && t.category === 'work';
+        row.className = `task-row${isWork ? ' cat-work' : ''}`;
         if (!t.isCal) row.draggable = true;
         const tid = String(t.id);
 
@@ -566,6 +611,7 @@ function render() {
           `<span class="task-label${t.done ? ' done' : ''}">${t.text}</span>` +
           (t.time ? `<span class="task-time">${t.time}</span>` : '') +
           (t.isCal ? '<span class="cal-badge">CAL</span>' : '') +
+          (isWork ? '<span class="work-badge">WORK</span>' : '') +
           (!t.isCal ? `<button class="task-del" data-del="${tid}" aria-label="Delete"><i class="ti ti-x"></i></button>` : '');
 
         if (!t.isCal) {
@@ -641,16 +687,39 @@ function render() {
         if (del) removeTask(del.getAttribute('data-del'));
       });
 
+      // Per-day add row with category toggle
       const addRow = document.createElement('div');
       addRow.className = 'add-row';
-      addRow.innerHTML = `<input type="text" placeholder="Add a new task..." aria-label="Add task for ${DAY_NAMES[di]}" /><button class="add-row-btn">+</button>`;
+      let addCat = 'personal';
+      addRow.innerHTML =
+        `<input type="text" placeholder="Add a new task..." aria-label="Add task for ${DAY_NAMES[di]}" />` +
+        `<div class="cat-toggle">` +
+          `<button data-addcat="personal" class="sel-personal">Me</button>` +
+          `<button data-addcat="work">Work</button>` +
+        `</div>` +
+        `<button class="add-row-btn">+</button>`;
+
       const inp = addRow.querySelector('input');
+      const catToggle = addRow.querySelector('.cat-toggle');
+
+      catToggle.addEventListener('click', e => {
+        const btn = e.target.closest('button[data-addcat]');
+        if (!btn) return;
+        addCat = btn.dataset.addcat;
+        catToggle.querySelectorAll('button').forEach(b => {
+          b.className = b.dataset.addcat === addCat ? `sel-${addCat}` : '';
+        });
+      });
+
       const doAdd = () => {
         const txt = inp.value.trim();
-        if (txt) { saveTask({id: newId(), text: txt, day: di, priority: 'none', done: false}); inp.value = ''; }
+        if (txt) {
+          saveTask({id: newId(), text: txt, day: di, priority: 'none', done: false, category: addCat});
+          inp.value = '';
+        }
       };
       inp.addEventListener('keydown', e => { if (e.key === 'Enter') doAdd(); });
-      addRow.querySelector('button').addEventListener('click', doAdd);
+      addRow.querySelector('.add-row-btn').addEventListener('click', doAdd);
       body.appendChild(addRow);
       block.appendChild(body);
     }
@@ -678,13 +747,34 @@ document.getElementById('quick-input').addEventListener('keydown', e => {
   const pri = document.getElementById('quick-pri-sel').value;
   const txt = inp.value.trim();
   if (!txt || isNaN(day)) return;
-  saveTask({id: newId(), text: txt, day, priority: pri, done: false});
+  saveTask({id: newId(), text: txt, day, priority: pri, done: false, category: quickCat});
   inp.value = '';
   inp.focus();
 });
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Header buttons ────────────────────────────────────────────────────────────
+// Filter button cycles: All → Work → Personal → All
+const filterCycle = ['all', 'work', 'personal'];
+let filterIdx = 0;
+const filterBtn = document.getElementById('filter-btn');
+filterBtn.addEventListener('click', function() {
+  filterIdx = (filterIdx + 1) % filterCycle.length;
+  filterMode = filterCycle[filterIdx];
+  if (filterMode === 'all') {
+    this.innerHTML = '<i class="ti ti-filter"></i> All';
+    this.className = 'hbtn';
+  } else if (filterMode === 'work') {
+    this.innerHTML = '<i class="ti ti-briefcase"></i> Work';
+    this.className = 'hbtn active-work';
+  } else {
+    this.innerHTML = '<i class="ti ti-home"></i> Personal';
+    this.className = 'hbtn active-personal';
+  }
+  render();
+});
+
+// Sort button
 const sortCycle = ['none', 'priority', 'status'];
 let sortIdx = 0;
 document.getElementById('sort-btn').addEventListener('click', function() {
