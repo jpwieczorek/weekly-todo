@@ -82,8 +82,16 @@
   .check-box { width: 22px; height: 22px; border-radius: 5px; border: 1.5px solid var(--check-border); flex-shrink: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .15s; background: none; }
   .check-box.checked { background: var(--orange); border-color: var(--orange); }
   .check-box.cal { border-color: var(--orange); }
-  .task-label { flex: 1; font-size: 16px; color: var(--text); line-height: 1.3; }
+  .task-label { flex: 1; font-size: 16px; color: var(--text); line-height: 1.3; cursor: text; }
   .task-label.done { text-decoration: line-through; color: var(--text-faint); }
+
+  /* Inline edit input */
+  .task-edit-input {
+    flex: 1; font-size: 16px; font-family: 'Inter', sans-serif; color: var(--text);
+    background: var(--bg); border: 1.5px solid var(--orange); border-radius: 6px;
+    padding: 2px 8px; outline: none; line-height: 1.3;
+  }
+
   .task-time { font-size: 11px; color: var(--orange); font-weight: 700; flex-shrink: 0; }
   .cal-badge { font-size: 10px; font-weight: 700; color: var(--orange); flex-shrink: 0; }
 
@@ -247,11 +255,16 @@ let tasks = [];
 let calTasks = [];
 let sortMode = null;
 let filterMode = 'all'; // 'all' | 'work' | 'personal'
-let collapsed = {};
 let dragId = null;
 let resetHandled = false;
 let hasScrolledToToday = false;
 let quickCat = 'personal';
+let editingTaskId = null; // ── tracks which task is being inline-edited
+
+// ── Auto-collapse: past days start collapsed, today + future start open ───────
+const collapsed = Object.fromEntries(
+  WEEK.map((_, i) => [i, i < todayColIdx])
+);
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Token: sessionStorage with 55-min expiry ──────────────────────────────────
@@ -411,6 +424,59 @@ function cancelTouchDrag() {
   clearGhost();
   clearHighlight();
   document.querySelectorAll('.task-row.dragging').forEach(r => r.classList.remove('dragging'));
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Inline edit helpers ───────────────────────────────────────────────────────
+function startEdit(taskId, labelEl) {
+  if (editingTaskId === taskId) return; // already editing
+  commitEdit(); // save any existing edit first
+
+  const t = tasks.find(x => String(x.id) === taskId);
+  if (!t || t.done) return; // don't edit completed tasks
+
+  editingTaskId = taskId;
+
+  const input = document.createElement('input');
+  input.className = 'task-edit-input';
+  input.value = t.text;
+  input.setAttribute('aria-label', 'Edit task');
+
+  labelEl.replaceWith(input);
+  input.focus();
+  input.select();
+
+  const save = () => {
+    const newText = input.value.trim();
+    if (newText && newText !== t.text) {
+      t.text = newText;
+      saveTask(t);
+    }
+    editingTaskId = null;
+    render();
+  };
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); save(); }
+    if (e.key === 'Escape') { editingTaskId = null; render(); }
+  });
+
+  input.addEventListener('blur', save);
+  // Prevent click on input from bubbling to row/body click handlers
+  input.addEventListener('click', e => e.stopPropagation());
+}
+
+function commitEdit() {
+  if (!editingTaskId) return;
+  const input = document.querySelector('.task-edit-input');
+  if (input) {
+    const t = tasks.find(x => String(x.id) === editingTaskId);
+    if (t) {
+      const newText = input.value.trim();
+      if (newText && newText !== t.text) { t.text = newText; saveTask(t); }
+    }
+  }
+  editingTaskId = null;
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -600,19 +666,112 @@ function render() {
         row.className = `task-row${isWork ? ' cat-work' : ''}`;
         if (!t.isCal) row.draggable = true;
         const tid = String(t.id);
+        const isEditingThis = editingTaskId === tid;
 
-        row.innerHTML =
-          `<div class="check-box${t.done ? ' checked' : ''}${t.isCal ? ' cal' : ''}"
-            data-check="${tid}" data-iscal="${t.isCal ? '1' : '0'}"
-            role="checkbox" aria-checked="${t.done}">
-            ${t.done ? '<i class="ti ti-check" style="font-size:12px;color:#fff"></i>' : ''}
-          </div>` +
-          (t.priority && t.priority !== 'none' ? `<span class="pri-dot p-${t.priority}"></span>` : '') +
-          `<span class="task-label${t.done ? ' done' : ''}">${t.text}</span>` +
-          (t.time ? `<span class="task-time">${t.time}</span>` : '') +
-          (t.isCal ? '<span class="cal-badge">CAL</span>' : '') +
-          (isWork ? '<span class="work-badge">WORK</span>' : '') +
-          (!t.isCal ? `<button class="task-del" data-del="${tid}" aria-label="Delete"><i class="ti ti-x"></i></button>` : '');
+        // Build check box
+        const checkBox = document.createElement('div');
+        checkBox.className = `check-box${t.done ? ' checked' : ''}${t.isCal ? ' cal' : ''}`;
+        checkBox.dataset.check = tid;
+        checkBox.dataset.iscal = t.isCal ? '1' : '0';
+        checkBox.setAttribute('role', 'checkbox');
+        checkBox.setAttribute('aria-checked', t.done);
+        if (t.done) checkBox.innerHTML = '<i class="ti ti-check" style="font-size:12px;color:#fff"></i>';
+        row.appendChild(checkBox);
+
+        // Priority dot
+        if (t.priority && t.priority !== 'none') {
+          const dot = document.createElement('span');
+          dot.className = `pri-dot p-${t.priority}`;
+          row.appendChild(dot);
+        }
+
+        // Task label or inline edit input
+        if (isEditingThis) {
+          const input = document.createElement('input');
+          input.className = 'task-edit-input';
+          input.value = t.text;
+          input.setAttribute('aria-label', 'Edit task');
+          row.appendChild(input);
+
+          // Focus after render
+          requestAnimationFrame(() => { input.focus(); input.select(); });
+
+          const save = () => {
+            const newText = input.value.trim();
+            if (newText && newText !== t.text) { t.text = newText; saveTask(t); }
+            editingTaskId = null;
+            render();
+          };
+
+          input.addEventListener('keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); save(); }
+            if (e.key === 'Escape') { editingTaskId = null; render(); }
+          });
+          input.addEventListener('blur', save);
+          input.addEventListener('click', e => e.stopPropagation());
+        } else {
+          const label = document.createElement('span');
+          label.className = `task-label${t.done ? ' done' : ''}`;
+          label.textContent = t.text;
+
+          // Double-click to edit (desktop)
+          if (!t.isCal && !t.done) {
+            label.addEventListener('dblclick', e => {
+              e.stopPropagation();
+              editingTaskId = tid;
+              render();
+            });
+            // Long-press to edit (mobile) — only if NOT already drag-initiating
+            let editPressTimer = null;
+            label.addEventListener('touchstart', e => {
+              editPressTimer = setTimeout(() => {
+                // Only trigger edit if not in a drag context
+                if (!touchDragging) {
+                  editingTaskId = tid;
+                  render();
+                }
+              }, 600);
+            }, { passive: true });
+            label.addEventListener('touchmove', () => { clearTimeout(editPressTimer); editPressTimer = null; });
+            label.addEventListener('touchend', () => { clearTimeout(editPressTimer); editPressTimer = null; });
+          }
+
+          row.appendChild(label);
+        }
+
+        // Time badge
+        if (t.time) {
+          const time = document.createElement('span');
+          time.className = 'task-time';
+          time.textContent = t.time;
+          row.appendChild(time);
+        }
+
+        // CAL badge
+        if (t.isCal) {
+          const badge = document.createElement('span');
+          badge.className = 'cal-badge';
+          badge.textContent = 'CAL';
+          row.appendChild(badge);
+        }
+
+        // WORK badge
+        if (isWork) {
+          const badge = document.createElement('span');
+          badge.className = 'work-badge';
+          badge.textContent = 'WORK';
+          row.appendChild(badge);
+        }
+
+        // Delete button
+        if (!t.isCal) {
+          const del = document.createElement('button');
+          del.className = 'task-del';
+          del.dataset.del = tid;
+          del.setAttribute('aria-label', 'Delete');
+          del.innerHTML = '<i class="ti ti-x"></i>';
+          row.appendChild(del);
+        }
 
         if (!t.isCal) {
           row.addEventListener('dragstart', () => { dragId = tid; setTimeout(() => row.classList.add('dragging'), 0); });
