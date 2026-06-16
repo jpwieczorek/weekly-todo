@@ -1,5 +1,3 @@
-
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -83,6 +81,8 @@
   .check-box { width: 22px; height: 22px; border-radius: 5px; border: 1.5px solid var(--check-border); flex-shrink: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .15s; background: none; }
   .check-box.checked { background: var(--orange); border-color: var(--orange); }
   .check-box.cal { border-color: var(--orange); }
+  @keyframes check-pop { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 70% { transform: scale(0.88); } 100% { transform: scale(1); } }
+  .check-box.pop { animation: check-pop .3s cubic-bezier(.36,.07,.19,.97); }
   .task-label { flex: 1; font-size: 16px; color: var(--text); line-height: 1.3; cursor: text; }
   .task-label.done { text-decoration: line-through; color: var(--text-faint); }
 
@@ -835,6 +835,9 @@ function render() {
         const chk = e.target.closest('[data-check]');
         if (chk) {
           const id = chk.getAttribute('data-check');
+          chk.classList.remove('pop');
+          void chk.offsetWidth; // reflow to restart animation
+          chk.classList.add('pop');
           if (chk.getAttribute('data-iscal') === '1') {
             const t = calTasks.find(x => String(x.id) === id);
             if (t) { t.done = !t.done; render(); updateProgress(); }
