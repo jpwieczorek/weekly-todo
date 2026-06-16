@@ -1,5 +1,3 @@
-
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -232,7 +230,7 @@
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getFirestore, collection, doc, setDoc, deleteDoc, addDoc, onSnapshot, query } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
-import { getAuth, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, GoogleAuthProvider } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getAuth, signInWithPopup, signOut, onAuthStateChanged, GoogleAuthProvider } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 
 // ── Config & constants ────────────────────────────────────────────────────────
 const firebaseConfig = {
@@ -432,16 +430,11 @@ function showSignIn() {
 document.getElementById('signin-btn').addEventListener('click', async () => {
   document.getElementById('signin-error').textContent = '';
   try {
-    await signInWithRedirect(auth, googleProvider);
+    await signInWithPopup(auth, googleProvider);
   } catch (err) {
-    document.getElementById('signin-error').textContent = 'Sign-in failed. Please try again.';
-  }
-});
-
-// Handle redirect result on page load
-getRedirectResult(auth).catch(err => {
-  if (err && err.code !== 'auth/cancelled-popup-request') {
-    document.getElementById('signin-error').textContent = 'Sign-in failed. Please try again.';
+    if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') {
+      document.getElementById('signin-error').textContent = 'Sign-in failed: ' + (err.code || err.message);
+    }
   }
 });
 
