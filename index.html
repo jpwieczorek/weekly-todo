@@ -1,4 +1,5 @@
 
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -340,7 +341,8 @@ async function handleWeekReset(oldTasks) {
     modal.style.display = 'none';
     localStorage.setItem(RESET_KEY, weekStartKey);
     for (const t of oldTasks) {
-      await setDoc(doc(db, 'tasks', String(newId())), { ...t, id: newId(), weekStart: weekStartKey, done: false });
+      const newTaskId = newId();
+      await setDoc(doc(db, 'tasks', String(newTaskId)), { ...t, id: newTaskId, weekStart: weekStartKey, done: false });
       await archiveTask(t);
     }
   };
