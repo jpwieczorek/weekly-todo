@@ -1,0 +1,973 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="Jeffrey's Weekly List" />
+<title>Jeffrey's Weekly List</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css" />
+<link rel="icon" href="icon.png" type="image/png" sizes="32x32" />
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root {
+    --orange: #D85A30;
+    --work: #3B82F6;
+    --work-bg: rgba(59,130,246,0.08);
+    --bg: #f5f5f3;
+    --surface: #ffffff;
+    --border: rgba(0,0,0,0.12);
+    --border-strong: rgba(0,0,0,0.22);
+    --text: #1a1a1a;
+    --text-muted: #666;
+    --text-faint: #999;
+    --check-border: rgba(0,0,0,0.25);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161614; --surface: #1f1f1d;
+      --border: rgba(255,255,255,0.1); --border-strong: rgba(255,255,255,0.2);
+      --text: #f0ede8; --text-muted: #999; --text-faint: #666;
+      --check-border: rgba(255,255,255,0.3);
+      --work-bg: rgba(59,130,246,0.12);
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  .app { max-width: 520px; margin: 0 auto; padding: 20px 16px 60px; }
+  .app-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }
+  .week-label { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 2px; }
+  .week-range { font-size: 13px; color: var(--text-muted); }
+  .header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .hbtn { background: var(--surface); border: 0.5px solid var(--border-strong); border-radius: 8px; padding: 0 10px; height: 32px; cursor: pointer; color: var(--text-muted); font-size: 12px; font-family: 'Inter', sans-serif; display: flex; align-items: center; gap: 5px; transition: background .15s; }
+  .hbtn:active { background: var(--border); }
+  .hbtn.orange { color: var(--orange); border-color: var(--orange); }
+  .hbtn.active-work { color: var(--work); border-color: var(--work); background: var(--work-bg); }
+  .hbtn.active-personal { color: var(--orange); border-color: var(--orange); background: rgba(216,90,48,0.08); }
+  .progress-wrap { height: 2px; background: var(--border); border-radius: 1px; margin-bottom: 20px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--orange); border-radius: 1px; transition: width .4s; }
+  .quick-bar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--surface); border-radius: 12px; margin-bottom: 20px; border: 0.5px solid var(--border); }
+  .quick-bar input { flex: 1; border: none; background: none; font-size: 15px; font-family: 'Inter', sans-serif; color: var(--text); outline: none; }
+  .quick-bar input::placeholder { color: var(--text-faint); }
+  .quick-bar select { border: 0.5px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text-muted); font-size: 12px; padding: 4px 6px; outline: none; cursor: pointer; font-family: 'Inter', sans-serif; }
+
+  /* Category toggle pill */
+  .cat-toggle { display: flex; border-radius: 6px; overflow: hidden; border: 0.5px solid var(--border); flex-shrink: 0; }
+  .cat-toggle button { background: none; border: none; cursor: pointer; font-size: 11px; font-family: 'Inter', sans-serif; font-weight: 700; padding: 4px 8px; color: var(--text-faint); transition: background .12s, color .12s; line-height: 1; }
+  .cat-toggle button.sel-personal { background: rgba(216,90,48,0.12); color: var(--orange); }
+  .cat-toggle button.sel-work { background: var(--work-bg); color: var(--work); }
+
+  .day-block { border-top: 1.5px solid var(--border-strong); margin-bottom: 12px; padding-bottom: 4px; }
+  .day-header-row { display: flex; align-items: center; justify-content: space-between; padding: 18px 0 12px; cursor: pointer; user-select: none; }
+  .day-title { font-size: 24px; font-weight: 900; letter-spacing: -.02em; color: var(--text); text-transform: uppercase; line-height: 1; }
+  .day-title.today { color: var(--orange); }
+  .day-meta { font-size: 12px; color: var(--text-faint); margin-top: 3px; }
+  .day-header-right { display: flex; align-items: center; gap: 8px; }
+  .day-count { font-size: 12px; color: var(--text-faint); }
+  .chevron { font-size: 16px; color: var(--text-faint); transition: transform .2s; display: inline-block; }
+  .chevron.open { transform: rotate(180deg); }
+  .day-body { padding-bottom: 18px; transition: background .15s; border-radius: 8px; }
+  .day-body.drag-over { background: rgba(216,90,48,0.07); }
+
+  /* Task row with category left border */
+  .task-row { display: flex; align-items: center; gap: 12px; padding: 10px 0 10px 8px; border-bottom: 0.5px solid var(--border); border-left: 3px solid transparent; margin-left: -8px; padding-left: 11px; border-radius: 2px; transition: border-left-color .15s; user-select: none; cursor: grab; }
+  .task-row:last-of-type { border-bottom: none; }
+  .task-row.dragging { opacity: 0.4; cursor: grabbing; }
+  .task-row.cat-work { border-left-color: var(--work); }
+
+  .check-box { width: 22px; height: 22px; border-radius: 5px; border: 1.5px solid var(--check-border); flex-shrink: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .15s; background: none; }
+  .check-box.checked { background: var(--orange); border-color: var(--orange); }
+  .check-box.cal { border-color: var(--orange); }
+  @keyframes check-pop { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 70% { transform: scale(0.88); } 100% { transform: scale(1); } }
+  .check-box.pop { animation: check-pop .3s cubic-bezier(.36,.07,.19,.97); }
+  .task-label { flex: 1; font-size: 16px; color: var(--text); line-height: 1.3; cursor: inherit; }
+  .task-label.done { text-decoration: line-through; color: var(--text-faint); }
+
+  /* Inline edit input */
+  .task-edit-input {
+    flex: 1; font-size: 16px; font-family: 'Inter', sans-serif; color: var(--text);
+    background: var(--bg); border: 1.5px solid var(--orange); border-radius: 6px;
+    padding: 2px 8px; outline: none; line-height: 1.3;
+  }
+
+  .task-time { font-size: 11px; color: var(--orange); font-weight: 700; flex-shrink: 0; }
+  .cal-badge { font-size: 10px; font-weight: 700; color: var(--orange); flex-shrink: 0; }
+
+  /* Work badge */
+  .work-badge { font-size: 10px; font-weight: 700; color: var(--work); flex-shrink: 0; letter-spacing: .03em; }
+
+  .pri-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .p-high { background: #E24B4A; } .p-med { background: #EF9F27; } .p-low { background: #1D9E75; }
+  .task-del { background: none; border: none; cursor: pointer; color: var(--text-faint); font-size: 16px; padding: 6px; opacity: 0.4; flex-shrink: 0; }
+  .add-row { display: flex; align-items: center; gap: 8px; padding: 10px 0 2px; }
+  .add-row input { flex: 1; border: none; background: none; font-size: 16px; font-family: 'Inter', sans-serif; color: var(--text); outline: none; padding: 0; }
+  .add-row input::placeholder { color: var(--text-faint); }
+  .add-row-btn { background: none; border: none; cursor: pointer; color: var(--orange); font-size: 24px; line-height: 1; padding: 0; flex-shrink: 0; }
+  .status-bar { font-size: 11px; color: var(--text-faint); padding: 0 0 14px; display: flex; align-items: center; gap: 6px; min-height: 24px; }
+  .spin { display: inline-block; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .app-logo { width: 32px; height: 32px; border-radius: 8px; }
+  .footer-note { font-size: 11px; color: var(--text-faint); text-align: center; padding: 24px 0 0; }
+
+  /* Touch drag ghost */
+  .touch-drag-ghost {
+    position: fixed; pointer-events: none; z-index: 9999;
+    background: var(--surface); border: 1.5px solid var(--orange); border-radius: 10px;
+    padding: 10px 14px; font-size: 15px; font-family: 'Inter', sans-serif; color: var(--text);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18); max-width: 280px; opacity: 0.92;
+    transform: scale(1.04); transition: transform .1s;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* Modal */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
+  .modal { background: var(--surface); border-radius: 16px; padding: 24px; max-width: 420px; width: 100%; max-height: 80vh; overflow-y: auto; }
+  .modal h2 { font-size: 20px; font-weight: 900; margin-bottom: 4px; }
+  .modal p { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; }
+  .modal-task { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 0.5px solid var(--border); font-size: 14px; }
+  .modal-task:last-of-type { border-bottom: none; }
+  .modal-day-label { font-size: 10px; font-weight: 700; color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em; flex-shrink: 0; width: 28px; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+  .modal-btn { flex: 1; padding: 12px; border-radius: 10px; border: none; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 700; transition: opacity .15s; }
+  .modal-btn.primary { background: var(--orange); color: #fff; }
+  .modal-btn.secondary { background: var(--border); color: var(--text-muted); }
+  .modal-btn:hover { opacity: .85; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="app-header">
+    <div style="display:flex;align-items:center;gap:10px">
+      <img src="icon.png" class="app-logo" alt="Jeffrey's Weekly List" onerror="this.style.display='none'" />
+      <div>
+        <div class="week-label">Jeffrey's Weekly List</div>
+        <div class="week-range" id="week-range"></div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="hbtn" id="filter-btn"><i class="ti ti-filter"></i> All</button>
+      <button class="hbtn" id="sort-btn"><i class="ti ti-arrow-up-down"></i> Sort</button>
+      <button class="hbtn orange" id="cal-btn"><i class="ti ti-calendar"></i> <span id="cal-btn-label">Connect cal</span></button>
+      <button class="hbtn" id="clear-btn"><i class="ti ti-trash"></i></button>
+    </div>
+  </div>
+
+  <div class="status-bar" id="status-bar"></div>
+  <div class="progress-wrap"><div class="progress-fill" id="prog" style="width:0%"></div></div>
+
+  <div class="quick-bar">
+    <i class="ti ti-plus" style="font-size:15px;color:var(--orange)"></i>
+    <input type="text" id="quick-input" placeholder="Quick add a task..." autocomplete="off" />
+    <select id="quick-day-sel"></select>
+    <select id="quick-pri-sel">
+      <option value="none">—</option>
+      <option value="high">High</option>
+      <option value="med">Med</option>
+      <option value="low">Low</option>
+    </select>
+    <div class="cat-toggle" id="quick-cat-toggle">
+      <button data-cat="personal" class="sel-personal">ME</button>
+      <button data-cat="work">WORK</button>
+    </div>
+  </div>
+
+  <div id="days-container"></div>
+  <div class="footer-note">Plan less, do more.</div>
+</div>
+
+<div class="modal-overlay" id="reset-modal" style="display:none">
+  <div class="modal">
+    <h2>New week!</h2>
+    <p>You have unfinished tasks from last week. What would you like to do?</p>
+    <div id="modal-task-list"></div>
+    <div class="modal-actions">
+      <button class="modal-btn secondary" id="modal-fresh">Start fresh</button>
+      <button class="modal-btn primary" id="modal-carry">Carry all over</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getFirestore, collection, doc, setDoc, deleteDoc, addDoc, onSnapshot, query } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+// ── Config & constants ────────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyA_lIC5IA-DSxAXzViPDzc9PtEiQVZ_7mc",
+  authDomain: "weekly-to-do-list-f6097.firebaseapp.com",
+  projectId: "weekly-to-do-list-f6097",
+  storageBucket: "weekly-to-do-list-f6097.firebasestorage.app",
+  messagingSenderId: "943359567358",
+  appId: "1:943359567358:web:4a79c0cd89027b02398caf"
+};
+
+const CLIENT_ID = '670822661778-odsq06vdblqnrlsgjvb00fh15gffp5ru.apps.googleusercontent.com';
+const SCOPES = 'https://www.googleapis.com/auth/calendar.calendars.readonly https://www.googleapis.com/auth/calendar.events.readonly';
+
+const TK = 'wktodo_token';
+const TE = 'wktodo_token_expiry';
+const CK = 'wktodo_cal';
+const DK = 'wktodo_caldate';
+const RESET_KEY = 'wktodo_reset_week';
+
+const DAY_NAMES = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+const DAY_SHORT = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Week / date helpers ───────────────────────────────────────────────────────
+const TODAY = new Date();
+
+function dateKey(d) { return d.toLocaleDateString('en-CA'); }
+
+function getMonWeek(fromDate) {
+  const d = fromDate || TODAY;
+  const diff = d.getDay() === 0 ? -6 : 1 - d.getDay();
+  return Array.from({length: 7}, (_, i) => {
+    const dt = new Date(d);
+    dt.setDate(d.getDate() + diff + i);
+    return dt;
+  });
+}
+
+const WEEK = getMonWeek();
+const todayKey = dateKey(TODAY);
+const todayColIdx = WEEK.findIndex(d => dateKey(d) === todayKey);
+const weekStartKey = dateKey(WEEK[0]);
+
+document.getElementById('week-range').textContent = (() => {
+  const s = WEEK[0], e = WEEK[6];
+  const mo = d => d.toLocaleDateString('en-US', {month: 'short'});
+  return `${mo(s)} ${s.getDate()} - ${mo(e)} ${e.getDate()}, ${e.getFullYear()}`;
+})();
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Firebase ──────────────────────────────────────────────────────────────────
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
+const tasksCol = collection(db, 'tasks');
+const archiveCol = collection(db, 'archived_tasks');
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── App state ─────────────────────────────────────────────────────────────────
+let tasks = [];
+let calTasks = [];
+let sortMode = null;
+let filterMode = 'all'; // 'all' | 'work' | 'personal'
+let dragId = null;
+let resetHandled = false;
+let hasScrolledToToday = false;
+let quickCat = 'personal';
+let editingTaskId = null; // ── tracks which task is being inline-edited
+let suppressSnapshot = false; // ── suppress re-render during local saves
+
+// ── Auto-collapse: past days start collapsed, today + future start open ───────
+const collapsed = Object.fromEntries(
+  WEEK.map((_, i) => [i, i < todayColIdx])
+);
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Token: sessionStorage with 55-min expiry ──────────────────────────────────
+const _storedToken = sessionStorage.getItem(TK);
+const _storedExpiry = parseInt(sessionStorage.getItem(TE) || '0');
+let accessToken = (_storedToken && _storedExpiry > Date.now()) ? _storedToken : null;
+if (!accessToken) { sessionStorage.removeItem(TK); sessionStorage.removeItem(TE); }
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Touch drag state ──────────────────────────────────────────────────────────
+let touchDragId = null;
+let touchGhost = null;
+let touchLongPressTimer = null;
+let touchDragging = false;
+let touchStartX = 0;
+let touchStartY = 0;
+let lastHighlightedBody = null;
+const LONG_PRESS_MS = 400;
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function setStatus(msg, spin) {
+  const el = document.getElementById('status-bar');
+  el.innerHTML = spin ? `<i class="ti ti-refresh spin"></i> ${msg}` : msg;
+}
+
+function fmtTime(iso) {
+  if (!iso || iso.length === 10) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  let h = d.getHours(), m = d.getMinutes();
+  const ap = h >= 12 ? 'pm' : 'am';
+  h = h % 12 || 12;
+  return m ? `${h}:${String(m).padStart(2,'0')}${ap}` : `${h}${ap}`;
+}
+
+function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Firebase helpers ──────────────────────────────────────────────────────────
+async function saveTask(task) {
+  suppressSnapshot = true;
+  try { await setDoc(doc(db, 'tasks', String(task.id)), { ...task, weekStart: weekStartKey }); }
+  catch(e) { console.error('Save failed', e); }
+  finally { setTimeout(() => { suppressSnapshot = false; }, 300); }
+}
+
+async function removeTask(id) {
+  try { await deleteDoc(doc(db, 'tasks', String(id))); }
+  catch(e) { console.error('Delete failed', e); }
+}
+
+async function archiveTask(task) {
+  try {
+    await addDoc(archiveCol, { ...task, archivedAt: new Date().toISOString() });
+    await deleteDoc(doc(db, 'tasks', String(task.id)));
+  } catch(e) { console.error('Archive failed', e); }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Week reset modal ──────────────────────────────────────────────────────────
+async function handleWeekReset(oldTasks) {
+  const lastResetWeek = localStorage.getItem(RESET_KEY);
+  if (lastResetWeek === weekStartKey) return;
+  if (oldTasks.length === 0) { localStorage.setItem(RESET_KEY, weekStartKey); return; }
+
+  const modal = document.getElementById('reset-modal');
+  const taskList = document.getElementById('modal-task-list');
+  taskList.innerHTML = oldTasks.map(t =>
+    `<div class="modal-task"><span class="modal-day-label">${DAY_SHORT[t.day]}</span><span style="flex:1">${t.text}</span></div>`
+  ).join('');
+  modal.style.display = 'flex';
+
+  document.getElementById('modal-carry').onclick = async () => {
+    modal.style.display = 'none';
+    localStorage.setItem(RESET_KEY, weekStartKey);
+    for (const t of oldTasks) {
+      const newTaskId = newId();
+      await setDoc(doc(db, 'tasks', String(newTaskId)), { ...t, id: newTaskId, weekStart: weekStartKey, done: false });
+      await archiveTask(t);
+    }
+  };
+
+  document.getElementById('modal-fresh').onclick = async () => {
+    modal.style.display = 'none';
+    localStorage.setItem(RESET_KEY, weekStartKey);
+    for (const t of oldTasks) await archiveTask(t);
+  };
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Firebase real-time sync ───────────────────────────────────────────────────
+setStatus('Connecting...', true);
+onSnapshot(query(tasksCol), async (snapshot) => {
+  tasks = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
+
+  for (const t of tasks.filter(t => t.weekStart && t.weekStart < weekStartKey && t.done)) {
+    await archiveTask(t);
+  }
+
+  if (!resetHandled) {
+    resetHandled = true;
+    await handleWeekReset(tasks.filter(t => t.weekStart && t.weekStart < weekStartKey && !t.done));
+  }
+
+  setStatus('', false);
+  console.log('[DND] onSnapshot fired, suppressSnapshot=', suppressSnapshot);
+  if (!suppressSnapshot) render();
+
+  if (!hasScrolledToToday && todayColIdx >= 0) {
+    hasScrolledToToday = true;
+    setTimeout(() => {
+      document.querySelectorAll('.day-block')[todayColIdx]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 300);
+  }
+}, () => setStatus('Sync error - check connection', false));
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Touch drag helpers ────────────────────────────────────────────────────────
+function createGhost(text) {
+  const ghost = document.createElement('div');
+  ghost.className = 'touch-drag-ghost';
+  ghost.textContent = text;
+  document.body.appendChild(ghost);
+  return ghost;
+}
+
+function moveGhost(x, y) {
+  if (!touchGhost) return;
+  touchGhost.style.left = (x - 20) + 'px';
+  touchGhost.style.top  = (y - 30) + 'px';
+}
+
+function clearGhost() {
+  touchGhost?.remove();
+  touchGhost = null;
+}
+
+function clearHighlight() {
+  if (lastHighlightedBody) {
+    lastHighlightedBody.classList.remove('drag-over');
+    lastHighlightedBody = null;
+  }
+}
+
+function getDayBodyAtPoint(x, y) {
+  if (touchGhost) touchGhost.style.display = 'none';
+  const el = document.elementFromPoint(x, y);
+  if (touchGhost) touchGhost.style.display = '';
+  const body = el?.closest('.day-body');
+  if (!body) return null;
+  const idx = parseInt(body.dataset.dayIdx);
+  return isNaN(idx) ? null : { body, idx };
+}
+
+function cancelTouchDrag() {
+  clearTimeout(touchLongPressTimer);
+  touchLongPressTimer = null;
+  touchDragging = false;
+  touchDragId = null;
+  clearGhost();
+  clearHighlight();
+  document.querySelectorAll('.task-row.dragging').forEach(r => r.classList.remove('dragging'));
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Inline edit helpers ───────────────────────────────────────────────────────
+function startEdit(taskId, labelEl) {
+  if (editingTaskId === taskId) return; // already editing
+  commitEdit(); // save any existing edit first
+
+  const t = tasks.find(x => String(x.id) === taskId);
+  if (!t || t.done) return; // don't edit completed tasks
+
+  editingTaskId = taskId;
+
+  const input = document.createElement('input');
+  input.className = 'task-edit-input';
+  input.value = t.text;
+  input.setAttribute('aria-label', 'Edit task');
+
+  labelEl.replaceWith(input);
+  input.focus();
+  input.select();
+
+  const save = () => {
+    const newText = input.value.trim();
+    if (newText && newText !== t.text) {
+      t.text = newText;
+      saveTask(t);
+    }
+    editingTaskId = null;
+    render();
+  };
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); save(); }
+    if (e.key === 'Escape') { editingTaskId = null; render(); }
+  });
+
+  input.addEventListener('blur', save);
+  // Prevent click on input from bubbling to row/body click handlers
+  input.addEventListener('click', e => e.stopPropagation());
+}
+
+function commitEdit() {
+  if (!editingTaskId) return;
+  const input = document.querySelector('.task-edit-input');
+  if (input) {
+    const t = tasks.find(x => String(x.id) === editingTaskId);
+    if (t) {
+      const newText = input.value.trim();
+      if (newText && newText !== t.text) { t.text = newText; saveTask(t); }
+    }
+  }
+  editingTaskId = null;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Google Calendar ───────────────────────────────────────────────────────────
+function updateCalBtn() {
+  document.getElementById('cal-btn-label').textContent = accessToken ? 'Sync cal' : 'Connect cal';
+}
+
+async function fetchCalendar(force) {
+  if (!accessToken) return;
+  const todStr = dateKey(TODAY);
+  const cached = localStorage.getItem(CK);
+  const cachedD = localStorage.getItem(DK);
+  if (!force && cached && cachedD === todStr) {
+    try { return JSON.parse(cached); } catch(e) {}
+  }
+  setStatus('Syncing calendar...', true);
+
+  const pad = n => String(n).padStart(2, '0');
+  const tzOff = WEEK[0].getTimezoneOffset();
+  const tzSign = tzOff <= 0 ? '+' : '-';
+  const tzStr = `${tzSign}${pad(Math.floor(Math.abs(tzOff) / 60))}:${pad(Math.abs(tzOff) % 60)}`;
+  const localISO = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T00:00:00`;
+  const weDate = WEEK[6];
+  const timeMin = encodeURIComponent(localISO(WEEK[0]) + tzStr);
+  const timeMax = encodeURIComponent(`${weDate.getFullYear()}-${pad(weDate.getMonth()+1)}-${pad(weDate.getDate())}T23:59:59${tzStr}`);
+
+  try {
+    const resp = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime&maxResults=50`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (resp.status === 401) {
+      accessToken = null;
+      sessionStorage.removeItem(TK);
+      sessionStorage.removeItem(TE);
+      updateCalBtn();
+      setStatus('Session expired - reconnect calendar', false);
+      return;
+    }
+    const data = await resp.json();
+    const events = (data.items || []).map(ev => ({
+      title: ev.summary || 'Untitled',
+      start: ev.start.dateTime || ev.start.date,
+      allDay: !ev.start.dateTime
+    }));
+    localStorage.setItem(CK, JSON.stringify(events));
+    localStorage.setItem(DK, todStr);
+    setStatus(`Synced ${events.length} event${events.length !== 1 ? 's' : ''}`, false);
+    return events;
+  } catch(err) {
+    setStatus('Calendar sync failed', false);
+    try { return JSON.parse(cached || '[]'); } catch(e) { return []; }
+  }
+}
+
+function eventsToCalTasks(evs) {
+  if (!evs) return [];
+  return evs.flatMap(ev => {
+    const s = ev.start || '';
+    let col = -1, time = '';
+    if (ev.allDay || s.length === 10) {
+      col = WEEK.findIndex(d => dateKey(d) === new Date(s + 'T00:00:00').toLocaleDateString('en-CA'));
+    } else {
+      const ed = new Date(s);
+      if (!isNaN(ed)) {
+        col = WEEK.findIndex(d => dateKey(d) === ed.toLocaleDateString('en-CA'));
+        time = fmtTime(s);
+      }
+    }
+    if (col < 0) return [];
+    return [{ id: 'cal_' + Math.random().toString(36).slice(2), text: ev.title, day: col, done: false, isCal: true, time }];
+  }).sort((a, b) => a.time.localeCompare(b.time));
+}
+
+function connectCalendar() {
+  google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID, scope: SCOPES,
+    callback: async (resp) => {
+      if (resp.error) { setStatus('Auth failed: ' + resp.error, false); return; }
+      accessToken = resp.access_token;
+      sessionStorage.setItem(TK, accessToken);
+      sessionStorage.setItem(TE, String(Date.now() + 55 * 60 * 1000));
+      updateCalBtn();
+      calTasks = eventsToCalTasks(await fetchCalendar(true));
+      render();
+    }
+  }).requestAccessToken();
+}
+
+document.getElementById('cal-btn').addEventListener('click', async () => {
+  if (accessToken) {
+    calTasks = eventsToCalTasks(await fetchCalendar(true));
+    render();
+  } else {
+    connectCalendar();
+  }
+});
+
+if (accessToken) {
+  fetchCalendar(false).then(evs => { calTasks = eventsToCalTasks(evs); render(); });
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Category toggle (quick-add bar) ──────────────────────────────────────────
+document.getElementById('quick-cat-toggle').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-cat]');
+  if (!btn) return;
+  quickCat = btn.dataset.cat;
+  document.querySelectorAll('#quick-cat-toggle button').forEach(b => {
+    b.className = b.dataset.cat === quickCat ? `sel-${quickCat}` : '';
+  });
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function allForDay(di) {
+  const cal = calTasks.filter(t => t.day === di);
+  let usr = tasks.filter(t => t.day === di && (!t.weekStart || t.weekStart >= weekStartKey));
+
+  // Apply category filter (cal tasks always shown in 'all', hidden in work/personal modes)
+  if (filterMode === 'work') usr = usr.filter(t => t.category === 'work');
+  if (filterMode === 'personal') usr = usr.filter(t => (t.category || 'personal') === 'personal');
+
+  const combined = filterMode === 'all' ? [...cal, ...usr] : [...usr];
+  if (sortMode === 'priority') {
+    const o = {high: 0, med: 1, low: 2, none: 3};
+    return combined.sort((a, b) => o[a.priority || 'none'] - o[b.priority || 'none']);
+  }
+  if (sortMode === 'status') return combined.sort((a, b) => a.done - b.done);
+  return combined;
+}
+
+function updateProgress() {
+  const current = tasks.filter(t => !t.weekStart || t.weekStart >= weekStartKey);
+  const pct = current.length ? Math.round(current.filter(t => t.done).length / current.length * 100) : 0;
+  document.getElementById('prog').style.width = pct + '%';
+}
+
+function render() {
+  const container = document.getElementById('days-container');
+  container.innerHTML = '';
+
+  WEEK.forEach((dt, di) => {
+    const isToday = di === todayColIdx;
+    const dayTasks = allForDay(di);
+    const isOpen = collapsed[di] ?? true;
+    const userTasks = tasks.filter(t => t.day === di && (!t.weekStart || t.weekStart >= weekStartKey));
+    const doneCount = userTasks.filter(t => t.done).length;
+
+    const block = document.createElement('div');
+    block.className = 'day-block';
+
+    const hrow = document.createElement('div');
+    hrow.className = 'day-header-row';
+    hrow.innerHTML =
+      `<div>
+        <div class="day-title${isToday ? ' today' : ''}">${DAY_NAMES[di]}</div>
+        <div class="day-meta">${dt.toLocaleDateString('en-US', {month:'long', day:'numeric'})}</div>
+      </div>
+      <div class="day-header-right">
+        ${userTasks.length ? `<span class="day-count">${doneCount}/${userTasks.length}</span>` : ''}
+        <i class="ti ti-chevron-down chevron ${isOpen ? 'open' : ''}"></i>
+      </div>`;
+    hrow.addEventListener('click', () => { collapsed[di] = !isOpen; render(); });
+    block.appendChild(hrow);
+
+    if (isOpen) {
+      const body = document.createElement('div');
+      body.className = 'day-body';
+      body.dataset.dayIdx = di;
+
+      body.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; body.classList.add('drag-over'); console.log('[DND] dragover day', di); });
+      body.addEventListener('dragleave', e => { if (!body.contains(e.relatedTarget)) body.classList.remove('drag-over'); });
+      body.addEventListener('drop', e => {
+        e.preventDefault();
+        body.classList.remove('drag-over');
+        const id = dragId || e.dataTransfer.getData('text/plain');
+        console.log('[DND] drop fired on day', di, 'id=', id, 'dragId=', dragId);
+        if (id) {
+          const moved = tasks.find(x => String(x.id) === id);
+          if (moved && moved.day !== di) {
+            moved.day = di;
+            render(); // update UI immediately from in-memory tasks
+            saveTask(moved); // persist in background, snapshot suppressed
+          }
+          dragId = null;
+        }
+      });
+
+      dayTasks.forEach(t => {
+        const row = document.createElement('div');
+        const isWork = !t.isCal && t.category === 'work';
+        row.className = `task-row${isWork ? ' cat-work' : ''}`;
+        if (!t.isCal) row.draggable = true;
+        const tid = String(t.id);
+        const isEditingThis = editingTaskId === tid;
+
+        // Build check box
+        const checkBox = document.createElement('div');
+        checkBox.className = `check-box${t.done ? ' checked' : ''}${t.isCal ? ' cal' : ''}`;
+        checkBox.dataset.check = tid;
+        checkBox.dataset.iscal = t.isCal ? '1' : '0';
+        checkBox.setAttribute('role', 'checkbox');
+        checkBox.setAttribute('aria-checked', t.done);
+        if (t.done) checkBox.innerHTML = '<i class="ti ti-check" style="font-size:12px;color:#fff"></i>';
+        row.appendChild(checkBox);
+
+        // Priority dot
+        if (t.priority && t.priority !== 'none') {
+          const dot = document.createElement('span');
+          dot.className = `pri-dot p-${t.priority}`;
+          row.appendChild(dot);
+        }
+
+        // Task label or inline edit input
+        if (isEditingThis) {
+          const input = document.createElement('input');
+          input.className = 'task-edit-input';
+          input.value = t.text;
+          input.setAttribute('aria-label', 'Edit task');
+          row.appendChild(input);
+
+          // Focus after render
+          requestAnimationFrame(() => { input.focus(); input.select(); });
+
+          const save = () => {
+            const newText = input.value.trim();
+            if (newText && newText !== t.text) { t.text = newText; saveTask(t); }
+            editingTaskId = null;
+            render();
+          };
+
+          input.addEventListener('keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); save(); }
+            if (e.key === 'Escape') { editingTaskId = null; render(); }
+          });
+          input.addEventListener('blur', save);
+          input.addEventListener('click', e => e.stopPropagation());
+        } else {
+          const label = document.createElement('span');
+          label.className = `task-label${t.done ? ' done' : ''}`;
+          label.textContent = t.text;
+
+          // Double-click to edit (desktop)
+          if (!t.isCal && !t.done) {
+            label.addEventListener('dblclick', e => {
+              e.stopPropagation();
+              editingTaskId = tid;
+              render();
+            });
+            // Long-press to edit (mobile) — only if NOT already drag-initiating
+            let editPressTimer = null;
+            label.addEventListener('touchstart', e => {
+              editPressTimer = setTimeout(() => {
+                // Only trigger edit if not in a drag context
+                if (!touchDragging) {
+                  editingTaskId = tid;
+                  render();
+                }
+              }, 600);
+            }, { passive: true });
+            label.addEventListener('touchmove', () => { clearTimeout(editPressTimer); editPressTimer = null; });
+            label.addEventListener('touchend', () => { clearTimeout(editPressTimer); editPressTimer = null; });
+          }
+
+          row.appendChild(label);
+        }
+
+        // Time badge
+        if (t.time) {
+          const time = document.createElement('span');
+          time.className = 'task-time';
+          time.textContent = t.time;
+          row.appendChild(time);
+        }
+
+        // CAL badge
+        if (t.isCal) {
+          const badge = document.createElement('span');
+          badge.className = 'cal-badge';
+          badge.textContent = 'CAL';
+          row.appendChild(badge);
+        }
+
+        // WORK badge
+        if (isWork) {
+          const badge = document.createElement('span');
+          badge.className = 'work-badge';
+          badge.textContent = 'WORK';
+          row.appendChild(badge);
+        }
+
+        // Delete button
+        if (!t.isCal) {
+          const del = document.createElement('button');
+          del.className = 'task-del';
+          del.dataset.del = tid;
+          del.setAttribute('aria-label', 'Delete');
+          del.innerHTML = '<i class="ti ti-x"></i>';
+          row.appendChild(del);
+        }
+
+        if (!t.isCal) {
+          row.addEventListener('dragstart', e => { dragId = tid; e.dataTransfer.setData('text/plain', tid); e.dataTransfer.effectAllowed = 'move'; setTimeout(() => row.classList.add('dragging'), 0); console.log('[DND] dragstart fired, dragId=', dragId); });
+          row.addEventListener('dragend', () => { console.log('[DND] dragend fired'); dragId = null; row.classList.remove('dragging'); });
+          row.addEventListener('dragover', e => e.preventDefault());
+
+          row.addEventListener('touchstart', e => {
+            const touch = e.touches[0];
+            touchStartX = touch.clientX;
+            touchStartY = touch.clientY;
+            touchLongPressTimer = setTimeout(() => {
+              touchDragging = true;
+              touchDragId = tid;
+              row.classList.add('dragging');
+              if (navigator.vibrate) navigator.vibrate(40);
+              touchGhost = createGhost(t.text);
+              moveGhost(touch.clientX, touch.clientY);
+            }, LONG_PRESS_MS);
+          }, { passive: true });
+
+          row.addEventListener('touchmove', e => {
+            const touch = e.touches[0];
+            const dx = Math.abs(touch.clientX - touchStartX);
+            const dy = Math.abs(touch.clientY - touchStartY);
+            if (!touchDragging && (dx > 8 || dy > 8)) { clearTimeout(touchLongPressTimer); touchLongPressTimer = null; return; }
+            if (!touchDragging) return;
+            e.preventDefault();
+            moveGhost(touch.clientX, touch.clientY);
+            const hit = getDayBodyAtPoint(touch.clientX, touch.clientY);
+            if (hit && hit.body !== lastHighlightedBody) {
+              clearHighlight();
+              hit.body.classList.add('drag-over');
+              lastHighlightedBody = hit.body;
+              if (collapsed[hit.idx] === false) { collapsed[hit.idx] = true; render(); }
+            } else if (!hit) {
+              clearHighlight();
+            }
+          }, { passive: false });
+
+          row.addEventListener('touchend', e => {
+            clearTimeout(touchLongPressTimer);
+            touchLongPressTimer = null;
+            if (!touchDragging) return;
+            const touch = e.changedTouches[0];
+            const hit = getDayBodyAtPoint(touch.clientX, touch.clientY);
+            if (hit) {
+              const moved = tasks.find(x => String(x.id) === touchDragId);
+              if (moved && moved.day !== hit.idx) { moved.day = hit.idx; render(); saveTask(moved); }
+            }
+            cancelTouchDrag();
+          });
+
+          row.addEventListener('touchcancel', cancelTouchDrag);
+        }
+        body.appendChild(row);
+      });
+
+      body.addEventListener('click', e => {
+        const chk = e.target.closest('[data-check]');
+        if (chk) {
+          const id = chk.getAttribute('data-check');
+          chk.classList.remove('pop');
+          void chk.offsetWidth; // reflow to restart animation
+          chk.classList.add('pop');
+          if (chk.getAttribute('data-iscal') === '1') {
+            const t = calTasks.find(x => String(x.id) === id);
+            if (t) { t.done = !t.done; render(); updateProgress(); }
+          } else {
+            const t = tasks.find(x => String(x.id) === id);
+            if (t) { t.done = !t.done; saveTask(t); }
+          }
+          return;
+        }
+        const del = e.target.closest('[data-del]');
+        if (del) removeTask(del.getAttribute('data-del'));
+      });
+
+      // Per-day add row with category toggle
+      const addRow = document.createElement('div');
+      addRow.className = 'add-row';
+      let addCat = 'personal';
+      addRow.innerHTML =
+        `<input type="text" placeholder="Add a new task..." aria-label="Add task for ${DAY_NAMES[di]}" />` +
+        `<div class="cat-toggle">` +
+          `<button data-addcat="personal" class="sel-personal">ME</button>` +
+          `<button data-addcat="work">WORK</button>` +
+        `</div>` +
+        `<button class="add-row-btn">+</button>`;
+
+      const inp = addRow.querySelector('input');
+      const catToggle = addRow.querySelector('.cat-toggle');
+
+      catToggle.addEventListener('click', e => {
+        const btn = e.target.closest('button[data-addcat]');
+        if (!btn) return;
+        addCat = btn.dataset.addcat;
+        catToggle.querySelectorAll('button').forEach(b => {
+          b.className = b.dataset.addcat === addCat ? `sel-${addCat}` : '';
+        });
+      });
+
+      const doAdd = () => {
+        const txt = inp.value.trim();
+        if (txt) {
+          saveTask({id: newId(), text: txt, day: di, priority: 'none', done: false, category: addCat});
+          inp.value = '';
+        }
+      };
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') doAdd(); });
+      addRow.querySelector('.add-row-btn').addEventListener('click', doAdd);
+      body.appendChild(addRow);
+      block.appendChild(body);
+    }
+    container.appendChild(block);
+  });
+
+  updateProgress();
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Quick-add bar ─────────────────────────────────────────────────────────────
+const qds = document.getElementById('quick-day-sel');
+DAY_SHORT.forEach((d, i) => {
+  const o = document.createElement('option');
+  o.value = i;
+  o.textContent = d + (i === todayColIdx ? ' ·' : '');
+  if (i === todayColIdx) o.selected = true;
+  qds.appendChild(o);
+});
+
+document.getElementById('quick-input').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const inp = e.target;
+  const day = parseInt(document.getElementById('quick-day-sel').value);
+  const pri = document.getElementById('quick-pri-sel').value;
+  const txt = inp.value.trim();
+  if (!txt || isNaN(day)) return;
+  saveTask({id: newId(), text: txt, day, priority: pri, done: false, category: quickCat});
+  inp.value = '';
+  inp.focus();
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Header buttons ────────────────────────────────────────────────────────────
+// Filter button cycles: All → Work → Personal → All
+const filterCycle = ['all', 'work', 'personal'];
+let filterIdx = 0;
+const filterBtn = document.getElementById('filter-btn');
+filterBtn.addEventListener('click', function() {
+  filterIdx = (filterIdx + 1) % filterCycle.length;
+  filterMode = filterCycle[filterIdx];
+  if (filterMode === 'all') {
+    this.innerHTML = '<i class="ti ti-filter"></i> All';
+    this.className = 'hbtn';
+  } else if (filterMode === 'work') {
+    this.innerHTML = '<i class="ti ti-briefcase"></i> Work';
+    this.className = 'hbtn active-work';
+  } else {
+    this.innerHTML = '<i class="ti ti-home"></i> Personal';
+    this.className = 'hbtn active-personal';
+  }
+  render();
+});
+
+// Sort button
+const sortCycle = ['none', 'priority', 'status'];
+let sortIdx = 0;
+document.getElementById('sort-btn').addEventListener('click', function() {
+  sortIdx = (sortIdx + 1) % sortCycle.length;
+  sortMode = sortCycle[sortIdx];
+  this.innerHTML = sortMode === 'priority' ? '<i class="ti ti-arrow-up-down"></i> Priority'
+    : sortMode === 'status' ? '<i class="ti ti-check"></i> Status'
+    : '<i class="ti ti-arrow-up-down"></i> Sort';
+  render();
+});
+
+document.getElementById('clear-btn').addEventListener('click', () => {
+  tasks.filter(t => t.done && (!t.weekStart || t.weekStart >= weekStartKey)).forEach(t => removeTask(t.id));
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
+updateCalBtn();
+</script>
+</body>
+</html>
