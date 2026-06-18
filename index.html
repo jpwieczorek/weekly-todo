@@ -1,4 +1,5 @@
 
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -648,6 +649,15 @@ function render() {
         <i class="ti ti-chevron-down chevron ${isOpen ? 'open' : ''}"></i>
       </div>`;
     hrow.addEventListener('click', () => { collapsed[di] = !isOpen; render(); });
+
+    // Auto-expand collapsed day when dragging over its header
+    hrow.addEventListener('dragenter', e => {
+      if (dragId && !isOpen) {
+        collapsed[di] = true; // true = open (collapsed[di]??true means true=open)
+        render();
+      }
+    });
+
     block.appendChild(hrow);
 
     if (isOpen) {
