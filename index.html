@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -261,6 +262,7 @@ let resetHandled = false;
 let hasScrolledToToday = false;
 let quickCat = 'personal';
 let editingTaskId = null; // ── tracks which task is being inline-edited
+let suppressSnapshot = false; // ── suppress re-render during local saves
 
 // ── Auto-collapse: past days start collapsed, today + future start open ───────
 const collapsed = Object.fromEntries(
@@ -307,8 +309,10 @@ function newId() { return Date.now().toString(36) + Math.random().toString(36).s
 
 // ── Firebase helpers ──────────────────────────────────────────────────────────
 async function saveTask(task) {
+  suppressSnapshot = true;
   try { await setDoc(doc(db, 'tasks', String(task.id)), { ...task, weekStart: weekStartKey }); }
   catch(e) { console.error('Save failed', e); }
+  finally { setTimeout(() => { suppressSnapshot = false; }, 300); }
 }
 
 async function removeTask(id) {
@@ -370,7 +374,7 @@ onSnapshot(query(tasksCol), async (snapshot) => {
   }
 
   setStatus('', false);
-  render();
+  if (!suppressSnapshot) render();
 
   if (!hasScrolledToToday && todayColIdx >= 0) {
     hasScrolledToToday = true;
@@ -659,7 +663,11 @@ function render() {
         const id = dragId || e.dataTransfer.getData('text/plain');
         if (id) {
           const moved = tasks.find(x => String(x.id) === id);
-          if (moved && moved.day !== di) { moved.day = di; saveTask(moved); }
+          if (moved && moved.day !== di) {
+            moved.day = di;
+            render(); // update UI immediately from in-memory tasks
+            saveTask(moved); // persist in background, snapshot suppressed
+          }
           dragId = null;
         }
       });
@@ -823,7 +831,7 @@ function render() {
             const hit = getDayBodyAtPoint(touch.clientX, touch.clientY);
             if (hit) {
               const moved = tasks.find(x => String(x.id) === touchDragId);
-              if (moved && moved.day !== hit.idx) { moved.day = hit.idx; saveTask(moved); }
+              if (moved && moved.day !== hit.idx) { moved.day = hit.idx; render(); saveTask(moved); }
             }
             cancelTouchDrag();
           });
