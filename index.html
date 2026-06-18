@@ -651,14 +651,16 @@ function render() {
       body.className = 'day-body';
       body.dataset.dayIdx = di;
 
-      body.addEventListener('dragover', e => { e.preventDefault(); body.classList.add('drag-over'); });
+      body.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; body.classList.add('drag-over'); });
       body.addEventListener('dragleave', e => { if (!body.contains(e.relatedTarget)) body.classList.remove('drag-over'); });
       body.addEventListener('drop', e => {
         e.preventDefault();
         body.classList.remove('drag-over');
-        if (dragId) {
-          const moved = tasks.find(x => String(x.id) === dragId);
+        const id = dragId || e.dataTransfer.getData('text/plain');
+        if (id) {
+          const moved = tasks.find(x => String(x.id) === id);
           if (moved && moved.day !== di) { moved.day = di; saveTask(moved); }
+          dragId = null;
         }
       });
 
@@ -776,7 +778,7 @@ function render() {
         }
 
         if (!t.isCal) {
-          row.addEventListener('dragstart', () => { dragId = tid; setTimeout(() => row.classList.add('dragging'), 0); });
+          row.addEventListener('dragstart', e => { dragId = tid; e.dataTransfer.setData('text/plain', tid); e.dataTransfer.effectAllowed = 'move'; setTimeout(() => row.classList.add('dragging'), 0); });
           row.addEventListener('dragend', () => { dragId = null; row.classList.remove('dragging'); });
           row.addEventListener('dragover', e => e.preventDefault());
 
