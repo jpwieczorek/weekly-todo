@@ -1,5 +1,3 @@
-
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -266,8 +264,10 @@ let editingTaskId = null; // ── tracks which task is being inline-edited
 let suppressSnapshot = false; // ── suppress re-render during local saves
 
 // ── Auto-collapse: past days start collapsed, today + future start open ───────
+// NOTE: in this map, `true` = OPEN. Today and future days start open;
+// past days start collapsed. (todayColIdx === -1 falls back to all-open.)
 const collapsed = Object.fromEntries(
-  WEEK.map((_, i) => [i, i < todayColIdx])
+  WEEK.map((_, i) => [i, i >= todayColIdx])
 );
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -306,6 +306,10 @@ function fmtTime(iso) {
 }
 
 function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Firebase helpers ──────────────────────────────────────────────────────────
@@ -338,7 +342,7 @@ async function handleWeekReset(oldTasks) {
   const modal = document.getElementById('reset-modal');
   const taskList = document.getElementById('modal-task-list');
   taskList.innerHTML = oldTasks.map(t =>
-    `<div class="modal-task"><span class="modal-day-label">${DAY_SHORT[t.day]}</span><span style="flex:1">${t.text}</span></div>`
+    `<div class="modal-task"><span class="modal-day-label">${DAY_SHORT[t.day]}</span><span style="flex:1">${escapeHtml(t.text)}</span></div>`
   ).join('');
   modal.style.display = 'flex';
 
@@ -431,59 +435,6 @@ function cancelTouchDrag() {
   clearGhost();
   clearHighlight();
   document.querySelectorAll('.task-row.dragging').forEach(r => r.classList.remove('dragging'));
-}
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ── Inline edit helpers ───────────────────────────────────────────────────────
-function startEdit(taskId, labelEl) {
-  if (editingTaskId === taskId) return; // already editing
-  commitEdit(); // save any existing edit first
-
-  const t = tasks.find(x => String(x.id) === taskId);
-  if (!t || t.done) return; // don't edit completed tasks
-
-  editingTaskId = taskId;
-
-  const input = document.createElement('input');
-  input.className = 'task-edit-input';
-  input.value = t.text;
-  input.setAttribute('aria-label', 'Edit task');
-
-  labelEl.replaceWith(input);
-  input.focus();
-  input.select();
-
-  const save = () => {
-    const newText = input.value.trim();
-    if (newText && newText !== t.text) {
-      t.text = newText;
-      saveTask(t);
-    }
-    editingTaskId = null;
-    render();
-  };
-
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); save(); }
-    if (e.key === 'Escape') { editingTaskId = null; render(); }
-  });
-
-  input.addEventListener('blur', save);
-  // Prevent click on input from bubbling to row/body click handlers
-  input.addEventListener('click', e => e.stopPropagation());
-}
-
-function commitEdit() {
-  if (!editingTaskId) return;
-  const input = document.querySelector('.task-edit-input');
-  if (input) {
-    const t = tasks.find(x => String(x.id) === editingTaskId);
-    if (t) {
-      const newText = input.value.trim();
-      if (newText && newText !== t.text) { t.text = newText; saveTask(t); }
-    }
-  }
-  editingTaskId = null;
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
