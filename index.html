@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -151,6 +152,7 @@
       <button class="hbtn" id="filter-btn"><i class="ti ti-filter"></i> All</button>
       <button class="hbtn" id="sort-btn"><i class="ti ti-arrow-up-down"></i> Sort</button>
       <button class="hbtn orange" id="cal-btn"><i class="ti ti-calendar"></i> <span id="cal-btn-label">Connect cal</span></button>
+      <button class="hbtn" id="account-btn" style="display:none" title="Account"><i class="ti ti-user"></i></button>
       <button class="hbtn" id="clear-btn"><i class="ti ti-trash"></i></button>
     </div>
   </div>
@@ -190,9 +192,66 @@
   </div>
 </div>
 
+<style>
+  .auth-gate {
+    position: fixed; inset: 0; z-index: 1000;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg); padding: 24px;
+  }
+  .auth-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 32px 28px; width: 100%; max-width: 360px;
+    text-align: center; box-shadow: 0 8px 40px rgba(0,0,0,0.12);
+  }
+  .auth-logo { width: 56px; height: 56px; border-radius: 12px; margin-bottom: 14px; }
+  .auth-card h2 { margin: 0 0 6px; font-size: 20px; color: var(--text); font-weight: 900; }
+  .auth-card p { margin: 0 0 22px; font-size: 14px; color: var(--text-muted); }
+  .auth-google-btn {
+    width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 12px 16px; font-size: 15px; font-weight: 700; cursor: pointer;
+    color: #fff; background: var(--orange); border: none; border-radius: 10px;
+    font-family: inherit; transition: opacity .15s;
+  }
+  .auth-google-btn:hover { opacity: .92; }
+  .auth-google-btn:disabled { opacity: .5; cursor: default; }
+  .auth-status { margin-top: 14px; min-height: 18px; font-size: 13px; color: var(--text-muted); }
+  .auth-status.err { color: var(--orange); }
+  .account-uid-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-faint); margin-top: 6px; }
+  .account-uid {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
+    word-break: break-all; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; margin: 4px 0 4px; color: var(--text);
+  }
+</style>
+
+<div class="auth-gate" id="auth-gate">
+  <div class="auth-card">
+    <img src="icon.png" class="auth-logo" alt="" onerror="this.style.display='none'" />
+    <h2>Jeffrey's Weekly List</h2>
+    <p>Sign in to load and sync your tasks across devices.</p>
+    <button class="auth-google-btn" id="signin-btn"><i class="ti ti-brand-google"></i> Sign in with Google</button>
+    <div class="auth-status" id="auth-status"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="account-modal" style="display:none">
+  <div class="modal">
+    <h2>Account</h2>
+    <p id="account-email" style="word-break:break-all;margin:0 0 4px"></p>
+    <div class="account-uid-label">Firebase UID</div>
+    <div class="account-uid" id="account-uid"></div>
+    <div class="modal-actions">
+      <button class="modal-btn secondary" id="copy-uid-btn">Copy UID</button>
+      <button class="modal-btn secondary" id="signout-btn">Sign out</button>
+      <button class="modal-btn primary" id="account-close-btn">Close</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getFirestore, collection, doc, setDoc, deleteDoc, addDoc, onSnapshot, query } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 
 // ── Config & constants ────────────────────────────────────────────────────────
 const firebaseConfig = {
@@ -247,6 +306,8 @@ document.getElementById('week-range').textContent = (() => {
 // ── Firebase ──────────────────────────────────────────────────────────────────
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
+const auth = getAuth(firebaseApp);
+const googleProvider = new GoogleAuthProvider();
 const tasksCol = collection(db, 'tasks');
 const archiveCol = collection(db, 'archived_tasks');
 // ─────────────────────────────────────────────────────────────────────────────
@@ -365,8 +426,7 @@ async function handleWeekReset(oldTasks) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Firebase real-time sync ───────────────────────────────────────────────────
-setStatus('Connecting...', true);
-onSnapshot(query(tasksCol), async (snapshot) => {
+const _onTasksSnapshot = async (snapshot) => {
   tasks = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
 
   for (const t of tasks.filter(t => t.weekStart && t.weekStart < weekStartKey && t.done)) {
@@ -387,8 +447,24 @@ onSnapshot(query(tasksCol), async (snapshot) => {
       document.querySelectorAll('.day-block')[todayColIdx]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 300);
   }
-}, () => setStatus('Sync error - check connection', false));
-// ─────────────────────────────────────────────────────────────────────────────
+};
+
+const _onTasksError = (err) => {
+  if (err && err.code === 'permission-denied') {
+    setStatus('Access denied — check Firestore rules or sign-in', false);
+  } else {
+    setStatus('Sync error - check connection', false);
+  }
+};
+
+let firestoreStarted = false;
+function startFirestoreSync() {
+  if (firestoreStarted) return;
+  firestoreStarted = true;
+  setStatus('Connecting...', true);
+  onSnapshot(query(tasksCol), _onTasksSnapshot, _onTasksError);
+}
+// ──────────────────────────────────────────────────────────────────────────
 
 // ── Touch drag helpers ────────────────────────────────────────────────────────
 function createGhost(text) {
@@ -923,6 +999,83 @@ document.getElementById('sort-btn').addEventListener('click', function() {
 
 document.getElementById('clear-btn').addEventListener('click', () => {
   tasks.filter(t => t.done && (!t.weekStart || t.weekStart >= weekStartKey)).forEach(t => removeTask(t.id));
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Authentication gate ───────────────────────────────────────────────────────
+const authGateEl   = document.getElementById('auth-gate');
+const authStatusEl  = document.getElementById('auth-status');
+const signinBtn     = document.getElementById('signin-btn');
+const accountBtn    = document.getElementById('account-btn');
+const accountModal  = document.getElementById('account-modal');
+
+function setAuthStatus(msg, isErr) {
+  authStatusEl.textContent = msg || '';
+  authStatusEl.classList.toggle('err', !!isErr);
+}
+
+signinBtn.addEventListener('click', async () => {
+  signinBtn.disabled = true;
+  setAuthStatus('Opening Google sign-in...', false);
+  try {
+    await signInWithPopup(auth, googleProvider);
+    // onAuthStateChanged handles the rest on success
+  } catch (e) {
+    signinBtn.disabled = false;
+    const code = e && e.code ? e.code : '';
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+      setAuthStatus('Sign-in cancelled. Try again.', true);
+    } else if (code === 'auth/unauthorized-domain') {
+      setAuthStatus('This domain is not authorized in Firebase Auth settings.', true);
+    } else if (code === 'auth/popup-blocked') {
+      setAuthStatus('Popup blocked — allow popups for this site and retry.', true);
+    } else {
+      setAuthStatus('Sign-in failed: ' + (code || (e && e.message) || 'unknown error'), true);
+    }
+    console.error('Sign-in error:', e);
+  }
+});
+
+accountBtn.addEventListener('click', () => {
+  const u = auth.currentUser;
+  if (!u) return;
+  document.getElementById('account-email').textContent = u.email || '(no email)';
+  document.getElementById('account-uid').textContent = u.uid;
+  accountModal.style.display = 'flex';
+});
+document.getElementById('account-close-btn').addEventListener('click', () => {
+  accountModal.style.display = 'none';
+});
+document.getElementById('copy-uid-btn').addEventListener('click', async () => {
+  const uid = auth.currentUser ? auth.currentUser.uid : '';
+  const btn = document.getElementById('copy-uid-btn');
+  try {
+    await navigator.clipboard.writeText(uid);
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = 'Copy UID'; }, 1500);
+  } catch (e) {
+    btn.textContent = 'Copy failed';
+    setTimeout(() => { btn.textContent = 'Copy UID'; }, 1500);
+  }
+});
+document.getElementById('signout-btn').addEventListener('click', async () => {
+  accountModal.style.display = 'none';
+  try { await signOut(auth); } catch (e) { console.error('Sign-out error:', e); }
+});
+
+onAuthStateChanged(auth, (user) => {
+  if (user) {
+    authGateEl.style.display = 'none';
+    accountBtn.style.display = '';
+    console.log('Firebase UID:', user.uid);
+    startFirestoreSync();
+  } else {
+    firestoreStarted = false;
+    authGateEl.style.display = 'flex';
+    accountBtn.style.display = 'none';
+    signinBtn.disabled = false;
+    setAuthStatus('', false);
+  }
 });
 // ─────────────────────────────────────────────────────────────────────────────
 
