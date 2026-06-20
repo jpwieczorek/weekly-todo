@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -379,6 +378,17 @@ async function saveTask(task) {
   try { await setDoc(doc(db, 'tasks', String(task.id)), { ...task, weekStart: weekStartKey }); }
   catch(e) { console.error('Save failed', e); }
   finally { setTimeout(() => { suppressSnapshot = false; }, 300); }
+}
+
+// Optimistically add a new task to the UI, then persist.
+// Mirrors the drag-drop pattern: update in-memory tasks + render() directly,
+// because saveTask() suppresses the Firestore snapshot echo that would
+// otherwise be responsible for drawing the new task.
+function commitNewTask(task) {
+  task.weekStart = weekStartKey;   // match what saveTask persists so the week filter includes it
+  tasks.push(task);                // optimistic in-memory insert
+  render();                        // draw immediately
+  saveTask(task);                  // persist; snapshot echo is suppressed
 }
 
 async function removeTask(id) {
@@ -890,7 +900,7 @@ function render() {
             if (t) { t.done = !t.done; render(); updateProgress(); }
           } else {
             const t = tasks.find(x => String(x.id) === id);
-            if (t) { t.done = !t.done; saveTask(t); }
+            if (t) { t.done = !t.done; render(); saveTask(t); }
           }
           return;
         }
@@ -925,8 +935,10 @@ function render() {
       const doAdd = () => {
         const txt = inp.value.trim();
         if (txt) {
-          saveTask({id: newId(), text: txt, day: di, priority: 'none', done: false, category: addCat});
-          inp.value = '';
+          commitNewTask({id: newId(), text: txt, day: di, priority: 'none', done: false, category: addCat});
+          // render() rebuilt the day blocks, so re-focus the fresh add input for this day
+          const reInp = document.querySelectorAll('#days-container .day-block')[di]?.querySelector('.add-row input');
+          if (reInp) reInp.focus();
         }
       };
       inp.addEventListener('keydown', e => { if (e.key === 'Enter') doAdd(); });
@@ -958,7 +970,7 @@ document.getElementById('quick-input').addEventListener('keydown', e => {
   const pri = document.getElementById('quick-pri-sel').value;
   const txt = inp.value.trim();
   if (!txt || isNaN(day)) return;
-  saveTask({id: newId(), text: txt, day, priority: pri, done: false, category: quickCat});
+  commitNewTask({id: newId(), text: txt, day, priority: pri, done: false, category: quickCat});
   inp.value = '';
   inp.focus();
 });
