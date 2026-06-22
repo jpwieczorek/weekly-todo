@@ -40,8 +40,17 @@ _Last updated: 2026-06-22_
 
 ## 🔴 Bigger projects
 
-- **Refactor `render()`** — ~290 lines (currently ~663–953). No behavior change, but it gates
-  the risk of everything else. Do this *before* recurring tasks.
+- **Refactor `render()`** — ~317 lines (currently ~775–1092), 24 inline handlers rebuilt every
+  cycle. **Working agreement (2026-06-22): do NOT do this as a standalone pass.** Efficiency is a
+  non-issue at this scale (a few dozen tasks; the full innerHTML rebuild is imperceptible). The only
+  real win is maintainability, and a big-bang rewrite of the most interaction-critical, pitfall-dense
+  code (suppressSnapshot, 400ms long-press, inline edit, en-CA keys) is the highest-regression-risk
+  change in the app for zero user-visible benefit. **Plan instead:** extract helpers
+  (`renderDayBlock`, `renderTaskRow`, `renderAddRow`, `attachDragHandlers`) *opportunistically* as
+  feature work enters that code — e.g. pull `renderTaskRow` out while building swipe-to-delete — so
+  each extraction rides along with the browser testing that feature needs anyway. No longer gates
+  recurring tasks. Lowest-risk standalone starter, if ever wanted: extract the add-row block
+  (~1021–1092) into `renderAddRow(di)`.
 - **Recurring tasks** — recurrence model + generation logic that cooperates with the weekly
   reset/carry-over without duplicating. Largest data-model change; most regression-prone.
 - **Multi-user / family rollout** — let Bethany, Hannah, and Amelia each keep their own list.
