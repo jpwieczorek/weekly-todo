@@ -77,6 +77,8 @@
   .task-row { display: flex; align-items: center; gap: 12px; padding: 10px 0 10px 8px; border-bottom: 0.5px solid var(--border); border-left: 3px solid transparent; margin-left: -8px; padding-left: 11px; border-radius: 2px; transition: border-left-color .15s; user-select: none; cursor: grab; }
   .task-row:last-of-type { border-bottom: none; }
   .task-row.dragging { opacity: 0.4; cursor: grabbing; }
+  .task-row.drop-before { box-shadow: inset 0 2px 0 var(--orange); }
+  .task-row.drop-after  { box-shadow: inset 0 -2px 0 var(--orange); }
   .task-row.cat-work { border-left-color: var(--work); }
 
   .check-box { width: 22px; height: 22px; border-radius: 5px; border: 1.5px solid var(--check-border); flex-shrink: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .15s; background: none; }
@@ -397,8 +399,17 @@ async function saveTask(task) {
 // Mirrors the drag-drop pattern: update in-memory tasks + render() directly,
 // because saveTask() suppresses the Firestore snapshot echo that would
 // otherwise be responsible for drawing the new task.
+// Next manual-order value for a day (max existing + 1), so new tasks land at the bottom.
+function nextOrderForDay(di) {
+  const orders = tasks
+    .filter(t => t.day === di && !t.isCal && (!t.weekStart || t.weekStart >= weekStartKey) && typeof t.order === 'number')
+    .map(t => t.order);
+  return orders.length ? Math.max(...orders) + 1 : 0;
+}
+
 function commitNewTask(task) {
   task.weekStart = weekStartKey;   // match what saveTask persists so the week filter includes it
+  if (task.order == null) task.order = nextOrderForDay(task.day); // append at bottom in manual order
   tasks.push(task);                // optimistic in-memory insert
   render();                        // draw immediately
   saveTask(task);                  // persist; snapshot echo is suppressed
@@ -533,7 +544,81 @@ function cancelTouchDrag() {
   touchDragId = null;
   clearGhost();
   clearHighlight();
+  clearInsertion();
   document.querySelectorAll('.task-row.dragging').forEach(r => r.classList.remove('dragging'));
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Reorder-within-a-day helpers ──────────────────────────────────────────────
+// Among the user-task rows in `body`, return the id of the row to insert BEFORE
+// based on pointer Y (cursor above a row's midpoint). null = append at the end.
+function insertBeforeIdAt(body, clientY, draggedId) {
+  const rows = [...body.querySelectorAll('.task-row')]
+    .filter(r => r.dataset.cal !== '1' && r.dataset.taskId !== String(draggedId));
+  for (const r of rows) {
+    const rect = r.getBoundingClientRect();
+    if (clientY < rect.top + rect.height / 2) return r.dataset.taskId;
+  }
+  return null;
+}
+
+function clearInsertion() {
+  document.querySelectorAll('.task-row.drop-before, .task-row.drop-after')
+    .forEach(r => r.classList.remove('drop-before', 'drop-after'));
+}
+
+// Paint the drop indicator (manual-order mode only — sorted modes have no manual slot).
+function markInsertion(body, clientY, draggedId) {
+  clearInsertion();
+  if (sortMode !== 'none') return;
+  const beforeId = insertBeforeIdAt(body, clientY, draggedId);
+  if (beforeId != null) {
+    body.querySelector(`.task-row[data-task-id="${CSS.escape(beforeId)}"]`)?.classList.add('drop-before');
+  } else {
+    const rows = [...body.querySelectorAll('.task-row')].filter(r => r.dataset.cal !== '1');
+    rows[rows.length - 1]?.classList.add('drop-after');
+  }
+}
+
+// Move a task to targetDay, inserting before beforeId (null = append). Renumbers that
+// day's user tasks so manual order persists, and writes only the tasks that changed.
+function moveTaskTo(taskId, targetDay, beforeId) {
+  const moved = tasks.find(x => String(x.id) === String(taskId));
+  if (!moved || moved.isCal) return;
+
+  moved.day = targetDay;
+  if (moved.weekStart == null) moved.weekStart = weekStartKey; // keep it inside the week filter
+
+  let dayList = tasks
+    .filter(t => t.day === targetDay && !t.isCal
+              && (!t.weekStart || t.weekStart >= weekStartKey)
+              && String(t.id) !== String(taskId))
+    .sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity));
+
+  let idx = dayList.length;
+  if (beforeId != null) {
+    const bi = dayList.findIndex(t => String(t.id) === String(beforeId));
+    if (bi !== -1) idx = bi;
+  }
+  dayList.splice(idx, 0, moved);
+
+  const changed = [];
+  dayList.forEach((t, i) => { if (t.order !== i) { t.order = i; changed.push(t); } });
+
+  render();                 // reflect immediately from in-memory tasks
+  changed.forEach(saveTask); // persist; snapshot echoes are suppressed
+}
+
+// Single entry point for both desktop and touch drops.
+function handleDrop(id, body, clientY) {
+  const targetDay = parseInt(body.dataset.dayIdx);
+  const moved = tasks.find(x => String(x.id) === String(id));
+  if (!moved || moved.isCal || isNaN(targetDay)) return;
+  if (sortMode === 'none') {
+    moveTaskTo(id, targetDay, insertBeforeIdAt(body, clientY, id)); // reorder within / across days
+  } else if (moved.day !== targetDay) {
+    moveTaskTo(id, targetDay, null); // sorted modes: cross-day move only, append at bottom
+  }
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -658,6 +743,20 @@ function allForDay(di) {
   if (filterMode === 'work') usr = usr.filter(t => t.category === 'work');
   if (filterMode === 'personal') usr = usr.filter(t => (t.category || 'personal') === 'personal');
 
+  // Manual order: stable sort by `order` (tasks without one sink to the bottom,
+  // keeping their current array position). Sort modes below re-sort on top of this,
+  // and because ties stay stable, manual order is preserved within equal groups.
+  usr = usr
+    .map((t, i) => [t, i])
+    .sort((a, b) => {
+      const oa = a[0].order, ob = b[0].order;
+      if (oa == null && ob == null) return a[1] - b[1];
+      if (oa == null) return 1;
+      if (ob == null) return -1;
+      return (oa - ob) || (a[1] - b[1]);
+    })
+    .map(p => p[0]);
+
   const combined = filterMode === 'all' ? [...cal, ...usr] : [...usr];
   if (sortMode === 'priority') {
     const o = {high: 0, med: 1, low: 2, none: 3};
@@ -715,21 +814,15 @@ function render() {
       body.className = 'day-body';
       body.dataset.dayIdx = di;
 
-      body.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; body.classList.add('drag-over'); });
-      body.addEventListener('dragleave', e => { if (!body.contains(e.relatedTarget)) body.classList.remove('drag-over'); });
+      body.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; body.classList.add('drag-over'); markInsertion(body, e.clientY, dragId); });
+      body.addEventListener('dragleave', e => { if (!body.contains(e.relatedTarget)) { body.classList.remove('drag-over'); clearInsertion(); } });
       body.addEventListener('drop', e => {
         e.preventDefault();
         body.classList.remove('drag-over');
+        clearInsertion();
         const id = dragId || e.dataTransfer.getData('text/plain');
-        if (id) {
-          const moved = tasks.find(x => String(x.id) === id);
-          if (moved && moved.day !== di) {
-            moved.day = di;
-            render(); // update UI immediately from in-memory tasks
-            saveTask(moved); // persist in background, snapshot suppressed
-          }
-          dragId = null;
-        }
+        if (id) handleDrop(id, body, e.clientY);
+        dragId = null;
       });
 
       dayTasks.forEach(t => {
@@ -738,6 +831,8 @@ function render() {
         row.className = `task-row${isWork ? ' cat-work' : ''}`;
         if (!t.isCal) row.draggable = true;
         const tid = String(t.id);
+        row.dataset.taskId = tid;
+        if (t.isCal) row.dataset.cal = '1';
         const isEditingThis = editingTaskId === tid;
 
         // Build check box
@@ -873,13 +968,17 @@ function render() {
             e.preventDefault();
             moveGhost(touch.clientX, touch.clientY);
             const hit = getDayBodyAtPoint(touch.clientX, touch.clientY);
-            if (hit && hit.body !== lastHighlightedBody) {
+            if (hit) {
+              if (hit.body !== lastHighlightedBody) {
+                clearHighlight();
+                hit.body.classList.add('drag-over');
+                lastHighlightedBody = hit.body;
+                if (collapsed[hit.idx] === false) { collapsed[hit.idx] = true; render(); }
+              }
+              markInsertion(hit.body, touch.clientY, touchDragId);
+            } else {
               clearHighlight();
-              hit.body.classList.add('drag-over');
-              lastHighlightedBody = hit.body;
-              if (collapsed[hit.idx] === false) { collapsed[hit.idx] = true; render(); }
-            } else if (!hit) {
-              clearHighlight();
+              clearInsertion();
             }
           }, { passive: false });
 
@@ -889,10 +988,7 @@ function render() {
             if (!touchDragging) return;
             const touch = e.changedTouches[0];
             const hit = getDayBodyAtPoint(touch.clientX, touch.clientY);
-            if (hit) {
-              const moved = tasks.find(x => String(x.id) === touchDragId);
-              if (moved && moved.day !== hit.idx) { moved.day = hit.idx; render(); saveTask(moved); }
-            }
+            if (hit) handleDrop(touchDragId, hit.body, touch.clientY);
             cancelTouchDrag();
           });
 
