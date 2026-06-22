@@ -21,8 +21,11 @@ _Last updated: 2026-06-22_
 - **Weekly reset with carry-over** — incomplete tasks roll forward; completed get archived.
 - **Persistent sort/filter state** — filter + sort modes restored from localStorage (`wktodo_filter`,
   `wktodo_sort`) on load and written on change. _Patch + `node --check` verified; pending browser check._
-- **Archive history view** — `archived_tasks` now readable via a modal (Archive button in header),
+- **Archive history view** — `archived_tasks` readable via a modal (opened from the Account modal),
   queried newest-first with `getDocs`/`orderBy`/`limit`. _Patch + `node --check` verified; pending browser check._
+- **Header streamline** — toolbar reduced to All · Sort · Sync cal · Account; Archive history and
+  Clear completed relocated into the Account modal; Firebase UID display + Copy UID button removed
+  (security-rules setup complete). _Patch + `node --check` verified; pending browser check._
 
 ## 🟢 Quick wins (low risk, surgical)
 
