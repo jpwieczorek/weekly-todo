@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -155,8 +156,6 @@
       <button class="hbtn" id="sort-btn"><i class="ti ti-arrow-up-down"></i> Sort</button>
       <button class="hbtn orange" id="cal-btn"><i class="ti ti-calendar"></i> <span id="cal-btn-label">Connect cal</span></button>
       <button class="hbtn" id="account-btn" style="display:none" title="Account"><i class="ti ti-user"></i></button>
-      <button class="hbtn" id="archive-btn" style="display:none" title="Archive history"><i class="ti ti-archive"></i></button>
-      <button class="hbtn" id="clear-btn"><i class="ti ti-trash"></i></button>
     </div>
   </div>
 
@@ -219,12 +218,6 @@
   .auth-google-btn:disabled { opacity: .5; cursor: default; }
   .auth-status { margin-top: 14px; min-height: 18px; font-size: 13px; color: var(--text-muted); }
   .auth-status.err { color: var(--orange); }
-  .account-uid-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-faint); margin-top: 6px; }
-  .account-uid {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
-    word-break: break-all; background: var(--bg); border: 1px solid var(--border);
-    border-radius: 8px; padding: 8px 10px; margin: 4px 0 4px; color: var(--text);
-  }
 </style>
 
 <div class="auth-gate" id="auth-gate">
@@ -241,10 +234,11 @@
   <div class="modal">
     <h2>Account</h2>
     <p id="account-email" style="word-break:break-all;margin:0 0 4px"></p>
-    <div class="account-uid-label">Firebase UID</div>
-    <div class="account-uid" id="account-uid"></div>
     <div class="modal-actions">
-      <button class="modal-btn secondary" id="copy-uid-btn">Copy UID</button>
+      <button class="modal-btn secondary" id="archive-btn">Archive history</button>
+      <button class="modal-btn secondary" id="clear-btn">Clear completed</button>
+    </div>
+    <div class="modal-actions">
       <button class="modal-btn secondary" id="signout-btn">Sign out</button>
       <button class="modal-btn primary" id="account-close-btn">Close</button>
     </div>
@@ -1039,6 +1033,7 @@ applySortBtn();
 
 document.getElementById('clear-btn').addEventListener('click', () => {
   tasks.filter(t => t.done && (!t.weekStart || t.weekStart >= weekStartKey)).forEach(t => removeTask(t.id));
+  accountModal.style.display = 'none';
 });
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1080,23 +1075,10 @@ accountBtn.addEventListener('click', () => {
   const u = auth.currentUser;
   if (!u) return;
   document.getElementById('account-email').textContent = u.email || '(no email)';
-  document.getElementById('account-uid').textContent = u.uid;
   accountModal.style.display = 'flex';
 });
 document.getElementById('account-close-btn').addEventListener('click', () => {
   accountModal.style.display = 'none';
-});
-document.getElementById('copy-uid-btn').addEventListener('click', async () => {
-  const uid = auth.currentUser ? auth.currentUser.uid : '';
-  const btn = document.getElementById('copy-uid-btn');
-  try {
-    await navigator.clipboard.writeText(uid);
-    btn.textContent = 'Copied!';
-    setTimeout(() => { btn.textContent = 'Copy UID'; }, 1500);
-  } catch (e) {
-    btn.textContent = 'Copy failed';
-    setTimeout(() => { btn.textContent = 'Copy UID'; }, 1500);
-  }
 });
 document.getElementById('signout-btn').addEventListener('click', async () => {
   accountModal.style.display = 'none';
@@ -1107,6 +1089,7 @@ document.getElementById('signout-btn').addEventListener('click', async () => {
 const archiveBtn   = document.getElementById('archive-btn');
 const archiveModal = document.getElementById('archive-modal');
 archiveBtn.addEventListener('click', async () => {
+  accountModal.style.display = 'none';
   archiveModal.style.display = 'flex';
   const listEl = document.getElementById('archive-list');
   listEl.innerHTML = '<div class="archive-empty">Loading…</div>';
@@ -1146,14 +1129,12 @@ onAuthStateChanged(auth, (user) => {
   if (user) {
     authGateEl.style.display = 'none';
     accountBtn.style.display = '';
-    archiveBtn.style.display = '';
     console.log('Firebase UID:', user.uid);
     startFirestoreSync();
   } else {
     firestoreStarted = false;
     authGateEl.style.display = 'flex';
     accountBtn.style.display = 'none';
-    archiveBtn.style.display = 'none';
     signinBtn.disabled = false;
     setAuthStatus('', false);
   }
