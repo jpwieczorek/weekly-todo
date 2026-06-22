@@ -17,7 +17,6 @@ _Last updated: 2026-06-22_
 - **Work/personal category filter** — `filterMode` toggle with color coding.
 - **Google Calendar sync** — OAuth read-only, localStorage cache by date key.
 - **Drag-and-drop** — desktop HTML5 + mobile touch (400ms long-press), auto-expand on hover.
-- **Manual within-day reorder** — drag a task to a new position inside the same day (and to a position when crossing days); persisted via a per-task `order` field, with a drop-position indicator. Active in manual sort mode; sorted modes still allow cross-day moves. _Patch + `node --check` + logic test verified; pending browser check._
 - **Inline editing** — double-click / double-tap.
 - **Weekly reset with carry-over** — incomplete tasks roll forward; completed get archived.
 - **Persistent sort/filter state** — filter + sort modes restored from localStorage (`wktodo_filter`,
@@ -45,6 +44,27 @@ _Last updated: 2026-06-22_
   the risk of everything else. Do this *before* recurring tasks.
 - **Recurring tasks** — recurrence model + generation logic that cooperates with the weekly
   reset/carry-over without duplicating. Largest data-model change; most regression-prone.
+- **Multi-user / family rollout** — let Bethany, Hannah, and Amelia each keep their own list.
+  Auth is already per-user (Google sign-in + `onAuthStateChanged`), and Calendar sync is already
+  per-Google-identity, so those layers are free. The gap: task data is **not owner-scoped**. One
+  flat `tasks` collection, `onSnapshot(query(tasksCol))` with no owner filter, and writes don't
+  stamp an owner. Work for the **isolated personal lists** version:
+  - Stamp `owner: auth.currentUser.uid` on every write (3 sites: `setDoc` ~391, archive `addDoc`
+    ~414, carry-over `setDoc` ~438).
+  - Filter every read by owner — `where('owner','==',uid)` on the snapshot query (~488) and the
+    archive `getDocs` (~1099).
+  - Rewrite Firestore rules from single-UID lockdown → per-owner (`resource.data.owner ==
+    request.auth.uid`). This is the real isolation boundary; the `where` clause is just a client
+    filter. Console-only, can't ship in index.html, needs verification with a 2nd account.
+  - **Backfill gotcha:** existing tasks have no `owner` field and will vanish from Jeffrey's view
+    the moment the filter goes live — one-time console update to set `owner` = Jeffrey's UID first.
+  - Doc IDs are `Date.now()+random` (globally unique), so no collision/namespacing needed.
+  - **Scope fork that sets the size:** isolated personal lists (above) is contained; *shared /
+    household* lists (seeing each other's, a shared family list) is a separate, much larger tier.
+  - **Access question:** once rules go per-owner, anyone who signs in at the public URL can create
+    a list. Optional allowlist of permitted UIDs in the rules to keep it to the four of us.
+  - **Prerequisite:** resolve the security-rules state below (test mode vs. locked) before the
+    rules rewrite — the per-owner rules build on whatever's actually live.
 
 ## ⚠️ Needs verification (not code — console / infra)
 
