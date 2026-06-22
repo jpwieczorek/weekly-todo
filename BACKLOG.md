@@ -17,6 +17,7 @@ _Last updated: 2026-06-22_
 - **Work/personal category filter** — `filterMode` toggle with color coding.
 - **Google Calendar sync** — OAuth read-only, localStorage cache by date key.
 - **Drag-and-drop** — desktop HTML5 + mobile touch (400ms long-press), auto-expand on hover.
+- **Manual within-day reorder** — drag a task to a new position inside the same day (and to a position when crossing days); persisted via a per-task `order` field, with a drop-position indicator. Active in manual sort mode; sorted modes still allow cross-day moves. _Patch + `node --check` + logic test verified; pending browser check._
 - **Inline editing** — double-click / double-tap.
 - **Weekly reset with carry-over** — incomplete tasks roll forward; completed get archived.
 - **Persistent sort/filter state** — filter + sort modes restored from localStorage (`wktodo_filter`,
