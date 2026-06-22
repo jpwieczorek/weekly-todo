@@ -19,13 +19,14 @@ _Last updated: 2026-06-22_
 - **Drag-and-drop** — desktop HTML5 + mobile touch (400ms long-press), auto-expand on hover.
 - **Inline editing** — double-click / double-tap.
 - **Weekly reset with carry-over** — incomplete tasks roll forward; completed get archived.
+- **Persistent sort/filter state** — filter + sort modes restored from localStorage (`wktodo_filter`,
+  `wktodo_sort`) on load and written on change. _Patch + `node --check` verified; pending browser check._
+- **Archive history view** — `archived_tasks` now readable via a modal (Archive button in header),
+  queried newest-first with `getDocs`/`orderBy`/`limit`. _Patch + `node --check` verified; pending browser check._
 
 ## 🟢 Quick wins (low risk, surgical)
 
-- **Persistent sort/filter state** — `filterMode` lives in memory only and resets to "all" on
-  reload. Read from localStorage on init, write on change.
-- **Archive history view** — tasks already write to `archived_tasks`, but there's no reader
-  (`getDocs` isn't even imported). Add the read path + a modal to browse archived items.
+- _(empty — both shipped 2026-06-22; pull new ideas up from below as needed)_
 
 ## 🟡 Medium lifts
 
