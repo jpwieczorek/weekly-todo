@@ -128,7 +128,9 @@
     background: var(--surface); border-radius: 12px; padding-bottom: 0;
     transition: background .15s;
   }
-  .day-body.drag-over { background: color-mix(in srgb, var(--tint) 10%, var(--surface)); }
+  /* Rows are opaque now (they slide over the swipe actions), so the drag-over
+     state uses an outer ring rather than a background tint the rows would hide. */
+  .day-body.drag-over { box-shadow: 0 0 0 2px var(--tint); }
 
   /* ---------- task rows ---------- */
   .task-row {
@@ -136,12 +138,28 @@
     padding: 12px 16px; min-height: 46px;
     border: none; margin-left: 0; border-radius: 0;
     user-select: none; cursor: grab;
+    background: var(--surface); position: relative; z-index: 1;
+    transition: transform .25s cubic-bezier(.32,.72,0,1);
   }
-  .task-row + .task-row::before, .add-row::before {
+  .task-row.swiping { transition: none; }
+  .task-swipe + .task-swipe .task-row::before, .add-row::before {
     content: ''; position: absolute; left: 50px; right: 0; top: 0;
     height: 0.5px; background: var(--sep);
   }
-  .task-row:first-child { border-radius: 12px 12px 0 0; }
+  .task-swipe { position: relative; overflow: hidden; }
+  .task-swipe:first-child { border-radius: 12px 12px 0 0; }
+  .swipe-actions { position: absolute; inset: 0 0 0 auto; display: flex; }
+  .swipe-actions button {
+    width: 75px; border: none; cursor: pointer; color: #fff;
+    font-family: inherit; font-size: 13px; font-weight: 500; letter-spacing: -0.01em;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  }
+  .swipe-actions button i { font-size: 20px; }
+  .swipe-actions .sa-flag { background: var(--tint); }
+  .swipe-actions .sa-del { background: var(--danger); }
+  .swipe-actions button:active { filter: brightness(.88); }
+  /* Touch devices reveal delete on swipe, so the always-visible X is redundant. */
+  @media (hover: none) { .task-del { display: none; } }
   .task-row.dragging { opacity: .4; cursor: grabbing; }
   .task-row.drop-before { box-shadow: inset 0 2px 0 var(--tint); }
   .task-row.drop-after  { box-shadow: inset 0 -2px 0 var(--tint); }
@@ -513,6 +531,21 @@ let touchStartX = 0;
 let touchStartY = 0;
 let lastHighlightedBody = null;
 const LONG_PRESS_MS = 400;
+// ── Swipe-actions state ───────────────────────────────────────────────────────
+const SWIPE_ACTION_W = 150;   // width of the two revealed buttons
+const SWIPE_START_PX = 10;    // horizontal travel before a swipe takes over
+let openSwipeRow = null;      // the one row currently held open
+let lastSwipeEnd = 0;         // timestamp, used to swallow the click after a swipe
+function closeOpenSwipe() {
+  if (!openSwipeRow) return;
+  openSwipeRow.classList.remove('swiping');
+  openSwipeRow.style.transform = 'translateX(0)';
+  openSwipeRow = null;
+}
+// A touch anywhere outside the open row closes it, the way iOS lists behave.
+document.addEventListener('touchstart', e => {
+  if (openSwipeRow && !openSwipeRow.parentElement.contains(e.target)) closeOpenSwipe();
+}, { passive: true });
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -912,6 +945,7 @@ function updateProgress() {
 }
 
 function render() {
+  openSwipeRow = null;   // the DOM is about to be rebuilt, so nothing stays open
   const container = document.getElementById('days-container');
   container.innerHTML = '';
 
@@ -1150,11 +1184,94 @@ function render() {
           });
 
           row.addEventListener('touchcancel', cancelTouchDrag);
+
+          // ── Swipe left to reveal Flag and Delete ──────────────────────────
+          let swipeActive = false;   // this gesture has become a swipe
+          let swipeBase = 0;         // offset the row already had when the touch began
+          let swipeOffset = 0;       // current translation, tracked rather than re-parsed
+
+          row.addEventListener('touchstart', () => {
+            swipeActive = false;
+            swipeBase = (openSwipeRow === row) ? -SWIPE_ACTION_W : 0;
+            if (openSwipeRow && openSwipeRow !== row) closeOpenSwipe();
+          }, { passive: true });
+
+          row.addEventListener('touchmove', e => {
+            if (touchDragging) return;               // a long-press drag wins outright
+            const touch = e.touches[0];
+            const dx = touch.clientX - touchStartX;
+            const dy = touch.clientY - touchStartY;
+            if (!swipeActive) {
+              // Only claim the gesture if it is clearly horizontal, so vertical
+              // scrolling through the week still feels normal.
+              if (Math.abs(dx) < SWIPE_START_PX || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+              swipeActive = true;
+              clearTimeout(touchLongPressTimer);
+              touchLongPressTimer = null;
+              row.classList.add('swiping');
+            }
+            e.preventDefault();
+            swipeOffset = Math.max(-SWIPE_ACTION_W, Math.min(0, swipeBase + dx));
+            row.style.transform = `translateX(${swipeOffset}px)`;
+          }, { passive: false });
+
+          const endSwipe = () => {
+            if (!swipeActive) return;
+            swipeActive = false;
+            lastSwipeEnd = Date.now();
+            row.classList.remove('swiping');
+            const current = swipeOffset;
+            if (current < -SWIPE_ACTION_W / 3) {
+              row.style.transform = `translateX(${-SWIPE_ACTION_W}px)`;
+              openSwipeRow = row;
+              if (navigator.vibrate) navigator.vibrate(8);
+            } else {
+              row.style.transform = 'translateX(0)';
+              if (openSwipeRow === row) openSwipeRow = null;
+            }
+          };
+          row.addEventListener('touchend', endSwipe);
+          row.addEventListener('touchcancel', endSwipe);
         }
-        body.appendChild(row);
+
+        const swipeWrap = document.createElement('div');
+        swipeWrap.className = 'task-swipe';
+        if (!t.isCal) {
+          const actions = document.createElement('div');
+          actions.className = 'swipe-actions';
+
+          const flagBtn = document.createElement('button');
+          flagBtn.className = 'sa-flag';
+          flagBtn.innerHTML = `<i class="ti ti-flag"></i>${isFlagged(t) ? 'Unflag' : 'Flag'}`;
+          flagBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            t.priority = flagValue(!isFlagged(t));
+            closeOpenSwipe();
+            saveTask(t);
+            render();
+          });
+
+          const delBtn = document.createElement('button');
+          delBtn.className = 'sa-del';
+          delBtn.innerHTML = '<i class="ti ti-trash"></i>Delete';
+          delBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            closeOpenSwipe();
+            removeTask(tid);
+          });
+
+          actions.appendChild(flagBtn);
+          actions.appendChild(delBtn);
+          swipeWrap.appendChild(actions);
+        }
+        swipeWrap.appendChild(row);
+        body.appendChild(swipeWrap);
       });
 
       body.addEventListener('click', e => {
+        // A swipe ends with a synthetic click; don't let it toggle a checkbox.
+        if (Date.now() - lastSwipeEnd < 350) return;
+        if (openSwipeRow && openSwipeRow.contains(e.target)) { closeOpenSwipe(); return; }
         const chk = e.target.closest('[data-check]');
         if (chk) {
           const id = chk.getAttribute('data-check');
