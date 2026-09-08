@@ -107,9 +107,6 @@
   .spin { display: inline-block; animation: spin .7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ---------- global quick-add bar: retired in favour of the per-day add rows ---------- */
-  .quick-bar { display: none; }
-
   /* ---------- grouped inset day lists ---------- */
   .day-block { margin-bottom: 22px; padding-bottom: 0; border-top: none; }
   .day-header-row {
@@ -215,7 +212,15 @@
     font-size: 22px; line-height: 1; padding: 0; flex-shrink: 0;
     width: 22px; display: flex; align-items: center; justify-content: center;
   }
-  .add-row .cat-toggle { order: 2; }
+  .add-row .cat-toggle { order: 3; }
+  .flag-btn {
+    order: 2; background: none; border: none; cursor: pointer; padding: 0 2px;
+    flex-shrink: 0; color: var(--label3); font-size: 17px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    transition: color .12s, opacity .12s;
+  }
+  .flag-btn.on { color: var(--tint); }
+  .flag-btn:active { opacity: .5; }
 
   /* ---------- segmented control ---------- */
   .cat-toggle {
@@ -319,24 +324,6 @@
 
   <div class="status-bar" id="status-bar"></div>
   <div class="progress-wrap"><div class="progress-fill" id="prog" style="width:0%"></div></div>
-
-  <div class="quick-bar">
-    <i class="ti ti-plus" style="font-size:15px;color:var(--orange)"></i>
-    <input type="text" id="quick-input" placeholder="Quick add a task..." autocomplete="off" />
-    <div class="quick-controls">
-      <select id="quick-day-sel"></select>
-      <select id="quick-pri-sel">
-        <option value="none">—</option>
-        <option value="high">High</option>
-        <option value="med">Med</option>
-        <option value="low">Low</option>
-      </select>
-      <div class="cat-toggle" id="quick-cat-toggle">
-        <button data-cat="personal" class="sel-personal">ME</button>
-        <button data-cat="work">WORK</button>
-      </div>
-    </div>
-  </div>
 
   <div id="days-container"></div>
   <div class="footer-note">Plan less, do more.</div>
@@ -491,9 +478,16 @@ let filterMode = localStorage.getItem(FK) || 'all';  // 'all' | 'work' | 'person
 let dragId = null;
 let resetHandled = false;
 let hasScrolledToToday = false;
-let quickCat = 'personal';
 let editingTaskId = null; // ── tracks which task is being inline-edited
 let suppressSnapshot = false; // ── suppress re-render during local saves
+
+// ── Flag ─────────────────────────────────────────────────────────────────────
+// Priority collapsed to a single flagged on/off state. The stored field is still
+// `priority`; 'high' means flagged and anything else (including legacy 'med' and
+// 'low') means not flagged. No migration needed.
+function isFlagged(t) { return t.priority === 'high'; }
+function flagValue(on) { return on ? 'high' : 'none'; }
+// ─────────────────────────────────────────────────────────────────────────────
 
 // ── Auto-collapse: past days start collapsed, today + future start open ───────
 // NOTE: in this map, `true` = OPEN. Today and future days start open;
@@ -880,17 +874,6 @@ if (accessToken) {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ── Category toggle (quick-add bar) ──────────────────────────────────────────
-document.getElementById('quick-cat-toggle').addEventListener('click', e => {
-  const btn = e.target.closest('button[data-cat]');
-  if (!btn) return;
-  quickCat = btn.dataset.cat;
-  document.querySelectorAll('#quick-cat-toggle button').forEach(b => {
-    b.className = b.dataset.cat === quickCat ? `sel-${quickCat}` : '';
-  });
-});
-// ─────────────────────────────────────────────────────────────────────────────
-
 // ── Render ────────────────────────────────────────────────────────────────────
 function allForDay(di) {
   const cal = calTasks.filter(t => t.day === di);
@@ -916,8 +899,7 @@ function allForDay(di) {
 
   const combined = filterMode === 'all' ? [...cal, ...usr] : [...usr];
   if (sortMode === 'priority') {
-    const o = {high: 0, med: 1, low: 2, none: 3};
-    return combined.sort((a, b) => o[a.priority || 'none'] - o[b.priority || 'none']);
+    return combined.sort((a, b) => (isFlagged(b) ? 1 : 0) - (isFlagged(a) ? 1 : 0));
   }
   if (sortMode === 'status') return combined.sort((a, b) => a.done - b.done);
   return combined;
@@ -1002,10 +984,11 @@ function render() {
         if (t.done) checkBox.innerHTML = '<i class="ti ti-check" style="font-size:12px;color:#fff"></i>';
         row.appendChild(checkBox);
 
-        // Priority dot
-        if (t.priority && t.priority !== 'none') {
+        // Flag marker
+        if (isFlagged(t)) {
           const dot = document.createElement('span');
-          dot.className = `pri-dot p-${t.priority}`;
+          dot.className = 'pri-dot p-high';
+          dot.setAttribute('aria-label', 'Flagged');
           row.appendChild(dot);
         }
 
@@ -1033,6 +1016,23 @@ function render() {
           });
           input.addEventListener('blur', save);
           input.addEventListener('click', e => e.stopPropagation());
+
+          // Flag toggle, only while editing. pointerdown + preventDefault keeps
+          // focus in the input so the blur handler doesn't re-render mid-tap.
+          const editFlag = document.createElement('button');
+          editFlag.className = 'flag-btn' + (isFlagged(t) ? ' on' : '');
+          editFlag.innerHTML = '<i class="ti ti-flag"></i>';
+          editFlag.setAttribute('aria-label', 'Toggle flag');
+          editFlag.setAttribute('aria-pressed', String(isFlagged(t)));
+          editFlag.addEventListener('pointerdown', e => {
+            e.preventDefault();
+            e.stopPropagation();
+            t.priority = flagValue(!isFlagged(t));
+            editFlag.classList.toggle('on', isFlagged(t));
+            editFlag.setAttribute('aria-pressed', String(isFlagged(t)));
+            saveTask(t);
+          });
+          row.appendChild(editFlag);
         } else {
           const label = document.createElement('span');
           label.className = `task-label${t.done ? ' done' : ''}`;
@@ -1178,8 +1178,10 @@ function render() {
       const addRow = document.createElement('div');
       addRow.className = 'add-row';
       let addCat = 'personal';
+      let addFlag = false;
       addRow.innerHTML =
         `<input type="text" placeholder="Add a new task..." aria-label="Add task for ${DAY_NAMES[di]}" />` +
+        `<button class="flag-btn add-flag" aria-label="Flag new task" aria-pressed="false"><i class="ti ti-flag"></i></button>` +
         `<div class="cat-toggle">` +
           `<button data-addcat="personal" class="sel-personal">ME</button>` +
           `<button data-addcat="work">WORK</button>` +
@@ -1188,6 +1190,15 @@ function render() {
 
       const inp = addRow.querySelector('input');
       const catToggle = addRow.querySelector('.cat-toggle');
+      const addFlagBtn = addRow.querySelector('.add-flag');
+
+      addFlagBtn.addEventListener('pointerdown', e => {
+        e.preventDefault();
+        addFlag = !addFlag;
+        addFlagBtn.classList.toggle('on', addFlag);
+        addFlagBtn.setAttribute('aria-pressed', String(addFlag));
+        inp.focus();
+      });
 
       catToggle.addEventListener('click', e => {
         const btn = e.target.closest('button[data-addcat]');
@@ -1201,7 +1212,8 @@ function render() {
       const doAdd = () => {
         const txt = inp.value.trim();
         if (txt) {
-          commitNewTask({id: newId(), text: txt, day: di, priority: 'none', done: false, category: addCat});
+          commitNewTask({id: newId(), text: txt, day: di, priority: flagValue(addFlag), done: false, category: addCat});
+          addFlag = false;
           // render() rebuilt the day blocks, so re-focus the fresh add input for this day
           const reInp = document.querySelectorAll('#days-container .day-block')[di]?.querySelector('.add-row input');
           if (reInp) reInp.focus();
@@ -1217,29 +1229,6 @@ function render() {
 
   updateProgress();
 }
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ── Quick-add bar ─────────────────────────────────────────────────────────────
-const qds = document.getElementById('quick-day-sel');
-DAY_SHORT.forEach((d, i) => {
-  const o = document.createElement('option');
-  o.value = i;
-  o.textContent = d + (i === todayColIdx ? ' ·' : '');
-  if (i === todayColIdx) o.selected = true;
-  qds.appendChild(o);
-});
-
-document.getElementById('quick-input').addEventListener('keydown', e => {
-  if (e.key !== 'Enter') return;
-  const inp = e.target;
-  const day = parseInt(document.getElementById('quick-day-sel').value);
-  const pri = document.getElementById('quick-pri-sel').value;
-  const txt = inp.value.trim();
-  if (!txt || isNaN(day)) return;
-  commitNewTask({id: newId(), text: txt, day, priority: pri, done: false, category: quickCat});
-  inp.value = '';
-  inp.focus();
-});
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Header buttons ────────────────────────────────────────────────────────────
@@ -1273,7 +1262,7 @@ const sortCycle = ['none', 'priority', 'status'];
 let sortIdx = Math.max(0, sortCycle.indexOf(sortMode));
 const sortBtn = document.getElementById('sort-btn');
 function applySortBtn() {
-  sortBtn.innerHTML = sortMode === 'priority' ? '<i class="ti ti-arrow-up-down"></i> Priority'
+  sortBtn.innerHTML = sortMode === 'priority' ? '<i class="ti ti-flag"></i> Flagged'
     : sortMode === 'status' ? '<i class="ti ti-check"></i> Status'
     : '<i class="ti ti-arrow-up-down"></i> Sort';
 }
