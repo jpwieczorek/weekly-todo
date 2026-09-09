@@ -1034,8 +1034,7 @@ function render() {
           input.setAttribute('aria-label', 'Edit task');
           row.appendChild(input);
 
-          // Focus after render
-          requestAnimationFrame(() => { input.focus(); input.select(); });
+          // Focus is handled synchronously by openEditor(), not here.
 
           const save = () => {
             const newText = input.value.trim();
@@ -1072,26 +1071,35 @@ function render() {
           label.className = `task-label${t.done ? ' done' : ''}`;
           label.textContent = t.text;
 
-          // Double-click to edit (desktop)
+          // Edit entry points: double-click on desktop, single tap on touch.
+          // The old 600ms long-press could never fire: the row's drag timer set
+          // touchDragging at 400ms, and the edit check bailed on it. A tap is
+          // safe because every competing touch gesture needs movement or time,
+          // so the only unclaimed gesture left is a short, still tap.
           if (!t.isCal && !t.done) {
             label.addEventListener('dblclick', e => {
               e.stopPropagation();
-              editingTaskId = tid;
-              render();
+              openEditor(tid);
             });
-            // Long-press to edit (mobile) — only if NOT already drag-initiating
-            let editPressTimer = null;
+
+            let tapX = 0, tapY = 0, tapMoved = false;
             label.addEventListener('touchstart', e => {
-              editPressTimer = setTimeout(() => {
-                // Only trigger edit if not in a drag context
-                if (!touchDragging) {
-                  editingTaskId = tid;
-                  render();
-                }
-              }, 600);
+              const tp = e.touches[0];
+              tapX = tp.clientX; tapY = tp.clientY; tapMoved = false;
             }, { passive: true });
-            label.addEventListener('touchmove', () => { clearTimeout(editPressTimer); editPressTimer = null; });
-            label.addEventListener('touchend', () => { clearTimeout(editPressTimer); editPressTimer = null; });
+            label.addEventListener('touchmove', e => {
+              const tp = e.touches[0];
+              if (Math.abs(tp.clientX - tapX) > 8 || Math.abs(tp.clientY - tapY) > 8) tapMoved = true;
+            }, { passive: true });
+            // Deliberately no stopPropagation: the row's own touchend still has
+            // to run so the 400ms long-press timer gets cleared.
+            label.addEventListener('touchend', e => {
+              if (tapMoved || touchDragging) return;        // became a scroll or a drag
+              if (openSwipeRow) return;                     // tap just closes the open tray
+              if (Date.now() - lastSwipeEnd < 350) return;  // tail end of a swipe
+              e.preventDefault();                           // suppress the synthetic click
+              openEditor(tid);
+            }, { passive: false });
           }
 
           row.appendChild(label);
@@ -1345,6 +1353,17 @@ function render() {
   });
 
   updateProgress();
+}
+
+// Single entry point for opening the inline editor. Focus runs synchronously
+// right after render() so it stays inside the user gesture that triggered it;
+// iOS will not raise the keyboard for a focus deferred to a later frame.
+function openEditor(id) {
+  editingTaskId = String(id);
+  render();
+  const input = document.querySelector(
+    `.task-row[data-task-id="${CSS.escape(String(id))}"] .task-edit-input`);
+  if (input) { input.focus(); input.select(); }
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
