@@ -1,94 +1,17 @@
-/
-Claude finished the response
-Thought for 54s
-
-Good call; it's the most discoverable of the four. Building the patch now, plus the keyboard fix, since fixing the entry point alone would leave you with an input you can't type into on iOS.
-Ran 5 commands, read a file
-
-Complete file, patched against a fresh pull of main. Three surgical replacements, 51 changed lines, node --check passes on the extracted module. Not tested; that's your browser.
-
-What changed:
-
-The dead 600ms block is gone, replaced by tap detection on .task-label. A tap counts only if the finger stayed within 8px and the gesture didn't become something else. Four guards, in order: tapMoved catches scrolling, touchDragging catches the long-press drag, openSwipeRow means the tap should close the tray instead, and the 350ms lastSwipeEnd window catches the tail of a swipe. preventDefault on touchend kills the synthetic click.
-
-Deliberately no stopPropagation on that handler. The row's own touchend has to keep running, because that's what clears touchLongPressTimer; stopping propagation would leave the drag timer armed after every tap.
-
-New openEditor(id) replaces the two inline editingTaskId = tid; render() pairs, and the requestAnimationFrame focus is gone. Focus now happens synchronously right after render(), inside the touchend handler, so it stays in the user gesture WebKit requires to raise the keyboard.
-
-Commit message:
-
-Fix mobile inline edit: tap the task text to open the editor
-
-The 600ms long-press could never fire. The row's drag timer set
-touchDragging at 400ms and the edit callback bailed on exactly that
-flag, so no press was ever both long enough to reach 600ms and free of
-a drag. Removed it and moved edit onto a tap, which was the only touch
-gesture nothing else claimed.
-
-Tap is guarded four ways: 8px of movement makes it a scroll, an active
-drag wins, an open swipe tray absorbs the tap to close itself, and the
-350ms window after a swipe is ignored. No stopPropagation, so the row's
-touchend still clears the long-press timer.
-
-Also replaced the requestAnimationFrame focus with a synchronous focus
-in a new openEditor() helper. Deferring focus to a later frame leaves
-the user gesture, and iOS will not raise the keyboard for it.
-
-Four things to check on the phone: a tap opens the editor and the keyboard actually comes up; scrolling past tasks doesn't fire it; a 400ms hold still gives you the drag ghost; and with a swipe tray open, tapping the text closes the tray instead of editing. Desktop double-click should be unchanged, but it now routes through openEditor so it's worth one click in Firefox.
-Index
-Code·HTML 
-
-okay code has been saved and committed.
-Ran a command
-
-Live on main, byte-identical to what I handed you. GitHub Pages usually takes a minute or two to serve the new file, so hard-refresh on the phone if you get the old behavior.
-
-The four checks from my last message are what matter now, and the keyboard one is the least certain; the tap fix is straightforward, but whether iOS raises the keyboard from a synchronous focus in touchend is the part I'd most want to see confirmed rather than reasoned about.
-
-Once you've run them, the backlog needs a second pass: the Bugs section still describes this as open, and Done should pick up tap-to-edit with whatever you actually verified. Tell me what you see and I'll turn that around.
-
-looks good.  let's update the backlog and then that's enough for today'
-Ran 2 commands, read a file
-
-Updated file, built from the version currently on main.
-
-Bugs is now empty with a Fixed subsection preserving why the long-press failed, so the reasoning survives if it ever regresses. Inline editing in Done rewrote to cover both entry points and the synchronous focus, marked verified in browser. Tap-to-edit added as its own entry with the four guards and the no-stopPropagation note. Task notes is no longer blocked. Line refs re-measured against the committed file: render() is 947–1356 (410 lines), add-row 1302–1356, archive getDocs 1477, UID log 1512.
-
-Commit message:
-
-Backlog: mobile inline edit fixed, line refs re-measured
-
-Moved the long-press bug to a Fixed subsection with the timer analysis
-intact. Added tap-to-edit to Done with its four guards, and rewrote the
-inline editing entry to cover both entry points and the synchronous
-focus that makes the iOS keyboard appear.
-
-Task notes is unblocked now that the editor is reachable on mobile.
-Re-measured line refs against main: render() 947-1356, add-row block
-1302-1356, archive getDocs 1477, UID console.log 1512.
-
-Still open whenever you come back to it: the Firestore rules state in the console, which gates the multi-user work.
-Backlog
-Document·MD 
-Write a message…
-
-
-Claude is AI and can make mistakes.
-Backlog · MD
 # Jeffrey's Weekly List — Backlog
- 
+
 > Canonical tracker for features and fixes. Fetch this at the start of any session
 > (raw URL below), update it as items move, and deliver a complete replacement file
 > with a commit message whenever status changes.
 >
 > Raw: `https://raw.githubusercontent.com/jpwieczorek/weekly-todo/main/BACKLOG.md`
- 
+
 _Last updated: 2026-09-09 (audit against `main`; mobile inline edit fixed; line refs re-measured)_
- 
+
 ---
- 
+
 ## ✅ Done (verified in code)
- 
+
 - **Firebase Auth**: Google sign-in via `signInWithPopup`, `onAuthStateChanged` gate, sign-out.
 - **Auto-collapse past days**: past days start collapsed; today + future start open.
 - **Work/personal category filter**: `filterMode` toggle with color coding.
@@ -139,14 +62,17 @@ _Last updated: 2026-09-09 (audit against `main`; mobile inline edit fixed; line 
   modals presented as bottom sheets with a grab handle and `sheet-up` animation, system font stack
   (`-apple-system` / SF Pro), hairline separators, and a check-pop animation. Class names and DOM
   structure were left unchanged. _Verified in code._
+
 ## 🟢 Quick wins (low risk, surgical)
- 
+
 - **Drop the UID console.log** (~1512). One line; do it opportunistically, not as its own commit.
+
 ## 🐞 Bugs
- 
+
 - _(none open)_
+
 ### Fixed
- 
+
 - **Mobile long-press-to-edit was unreachable** (fixed 2026-09-09). `.task-label` started a 600ms
   timer that opened the editor only `if (!touchDragging)`, but the row's own handler set
   `touchDragging` at `LONG_PRESS_MS` (400ms), so any press surviving to 600ms had already become a
@@ -154,8 +80,9 @@ _Last updated: 2026-09-09 (audit against `main`; mobile inline edit fixed; line 
   which cleared the edit timer. Net effect: no path into inline edit on iPhone. Fixed by moving
   edit onto a tap, the one touch gesture nothing else claimed. Same commit fixed the keyboard not
   appearing, via the synchronous focus described under Inline editing above.
+
 ## 🟡 Medium lifts
- 
+
 - **Task notes field**: `saveTask` already spreads `...task`, so a `notes` property persists for
   free. Work is UI: entry/view (via the existing edit interaction) + a row indicator. Now
   unblocked: the editor is reachable on mobile again, so it can serve as the entry point.
@@ -166,8 +93,9 @@ _Last updated: 2026-09-09 (audit against `main`; mobile inline edit fixed; line 
   `service-worker.js` 404). So Add to Home Screen on iOS gives standalone chrome but there's no
   install prompt elsewhere and no offline shell. Note this breaks the single-file rule: a manifest
   and a worker are separate files that must be committed alongside `index.html`.
+
 ## 🔴 Bigger projects
- 
+
 - **Refactor `render()`**: now 410 lines (947–1356) with 31 `addEventListener` calls rebuilt every
   cycle; it grew from ~317 lines as swipe actions and manual reorder landed inside it.
   **Working agreement (2026-06-22, still holds): do NOT do this as a standalone pass.** Efficiency
@@ -207,8 +135,9 @@ _Last updated: 2026-09-09 (audit against `main`; mobile inline edit fixed; line 
     a list. Optional allowlist of permitted UIDs in the rules to keep it to the four of us.
   - **Prerequisite:** resolve the security-rules state below before the rules rewrite; the
     per-owner rules build on whatever's actually live.
+
 ## ⚠️ Needs verification (not code — console / infra)
- 
+
 - **Firestore security rules**: notes conflict on whether these are locked to the Firebase UID
   with default-deny, or still in test mode. Verify in the Firebase console; an expired test-mode
   rule flips the database open or fully locked depending on the default. The client already
@@ -221,16 +150,18 @@ _Last updated: 2026-09-09 (audit against `main`; mobile inline edit fixed; line 
   stays manual via the GitHub web editor. Claude Code with the repo selected is the route if
   direct commits become worth setting up. The old fine-grained PAT ("Claude MCP") is orphaned and
   can be left to expire.
+
 ## 📌 Project-instruction drift (fix in the Claude project instructions, not here)
- 
+
 - Stack notes still list "Inter from Google Fonts". The file loads no Google Fonts and uses the
   system stack; only Tabler Icons is remote.
 - Feature-ideas list still names swipe-to-delete, auto-collapse, and persistent sort/filter as
   ideas. All three shipped.
+
 ---
- 
+
 ## Maintenance convention
- 
+
 - Fetch this file at session start alongside `index.html`.
 - When an item ships: move it to **Done** with a one-line note on what was verified.
 - When a new idea comes up: add it to the appropriate tier.
@@ -238,4 +169,3 @@ _Last updated: 2026-09-09 (audit against `main`; mobile inline edit fixed; line 
 - "Done" means verified (in code or by browser check), not merely "patch applied."
 - Re-measure line references whenever `render()` or the Firebase helpers are touched; they drift
   fast and the multi-user plan depends on them.
- 
